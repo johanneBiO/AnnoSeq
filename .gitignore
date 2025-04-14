@@ -3,7 +3,9 @@
 /reports/
 /esm2/esm/
 /esm2/esm_utilities/example_proteins/
-code/analysis/
+/esm2/esm_utilities/slurm_logs/
+/esm2/esm_utilities/utils/__pycache__/
+/code/analysis/
 smoothing.R
 /code/processing/prepare_classification.qmd
 /code/processing/process_esm_output.qmd
