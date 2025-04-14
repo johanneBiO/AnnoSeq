@@ -5,7 +5,7 @@
 /esm2/esm_utilities/example_proteins/
 code/analysis/
 smoothing.R
-code/processing/prepare_classification.qmd
-code/processing/process_esm_output.qmd
+/code/processing/prepare_classification.qmd
+/code/processing/process_esm_output.qmd
 .Rproj.user/
 *.Rproj
