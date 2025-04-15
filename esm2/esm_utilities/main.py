@@ -11,7 +11,7 @@ import time
 import torch
 import argparse
 from torch.utils.data import DataLoader
-from esm2.esm_utilities.utils.esm_processor import SequenceDataset, load_esm_model, collate_fn, get_esm2_output, read_acc_seqs_from_fasta, aggregate_batches
+from utils.esm_processor import SequenceDataset, load_esm_model, collate_fn, get_esm2_output, read_acc_seqs_from_fasta, aggregate_batches
 
 #---------------------------------------------------------------------------------------#
 # PREPARATION
@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-seq", "--seq_input", help = "Input sequence fasta file.")
 parser.add_argument("-res", "--res_dir", help = "Result folder.")
 parser.add_argument("-s", "--scr_run", action = "store_true", help = "Run ESM for scrambled sequences.")
-parser.add_argument("-scr", "--scr_input", help = "Scrambled sequence folder.")
+parser.add_argument("-scr", "--scr_dir", help = "Scrambled sequence folder.")
 parser.add_argument("-n", "--norm",  action = "store_true", help = "Extract normalized attention scores.")
 parser.add_argument("-bs", "--batch_size", default=20, help = "Batch size for processing.")
 args = parser.parse_args()
@@ -33,7 +33,7 @@ args = parser.parse_args()
 bio_fasta_file = args.seq_input
 res_dir = args.res_dir
 scr = args.scr_run
-scr_dir = args.scr_input
+scr_dir = args.scr_dir
 norm_attn = args.norm
 batch_size = args.batch_size
 
