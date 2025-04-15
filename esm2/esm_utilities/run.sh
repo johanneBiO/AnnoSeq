@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --gres=shard:10
+#SBATCH --gres=shard:23
 #SBATCH --mem=20G
 #SBATCH --time=5:00:00
 #SBATCH --nodelist=compute02,compute03,compute04,compute05

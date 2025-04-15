@@ -1,10 +1,10 @@
+*.pyc
 /data/
 /other/
 /reports/
 /esm_remove/
 /esm2/esm_utilities/example_proteins/
 /esm2/esm_utilities/slurm_logs/
-/esm2/esm_utilities/utils/__pycache__/
 /code/analysis/
 smoothing.R
 /code/processing/prepare_classification.qmd

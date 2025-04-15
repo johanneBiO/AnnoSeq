@@ -27,7 +27,7 @@ parser.add_argument("-res", "--res_dir", help = "Result folder.")
 parser.add_argument("-s", "--scr_run", action = "store_true", help = "Run ESM for scrambled sequences.")
 parser.add_argument("-scr", "--scr_dir", help = "Scrambled sequence folder.")
 parser.add_argument("-n", "--norm",  action = "store_true", help = "Extract normalized attention scores.")
-parser.add_argument("-bs", "--batch_size", default=20, help = "Batch size for processing.")
+parser.add_argument("-bs", "--batch_size", type=int, default=20, help = "Batch size for processing.")
 args = parser.parse_args()
 
 bio_fasta_file = args.seq_input
