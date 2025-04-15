@@ -1,7 +1,7 @@
 /data/
 /other/
 /reports/
-/esm2/esm/
+/esm_remove/
 /esm2/esm_utilities/example_proteins/
 /esm2/esm_utilities/slurm_logs/
 /esm2/esm_utilities/utils/__pycache__/
