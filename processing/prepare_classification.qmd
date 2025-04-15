@@ -1,0 +1,94 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(tidyr)
+library(dplyr)
+library(feather)
+source("../smoothing.R")
+```
+
+
+```{r}
+data_path <- "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/100_small/preprocessed/"
+
+attn_raw_mean  <- readRDS(paste(data_path, "attn_all_layers_raw_mean.rds", sep = ""))
+```
+
+```{r}
+accessions <- read.table(file = "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/100_small/additional/UP000005640_9606_sp_100_acc.txt") |>
+  dplyr::rename(accession = "V1") |>
+  select(accession) |>
+  pull()
+
+features <- readRDS(file = "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/20000_large/annotations/features_sp_filtered.rds")
+
+features <- features |>
+  filter(accession %in% unlist(accessions)) |>
+  mutate(across(c(category, feature_type), ~ ifelse(is.na(.), "Unannotated", .)),
+         across(c(category, feature_type), ~ str_replace(., "^(.)", toupper)))
+
+seq_length <- attn_raw_mean |>
+  group_by(accession) |>
+  summarise(length = max(position))
+
+features_expand <- features |>
+  #mutate(class = case_when(start_position == end_position ~ 2,
+                          #.default = 1)) |> 
+  mutate(class = as.integer(factor(feature_type, levels = unique(feature_type)))) |>
+  rowwise() |>
+  mutate(position = list(seq(start_position, end_position))) |>
+  unnest(position) |>
+  select(accession, position, class)
+```
+
+```{r}
+pos_class <- attn_raw_mean |>
+  select(accession, position, layer, bio_attn_Z) |>
+  left_join(seq_length,
+            by = "accession",
+            relationship = "many-to-one") |>
+  left_join(features_expand,
+            by = c("accession", "position"),
+            relationship = "many-to-many") |>
+  #mutate(w = nearestUneven(length/10),
+      #   s = w/6) |>
+  #group_by(accession, layer) |>
+  #mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z,
+                                             # window = unique(w),
+                                            #  sigma = unique(s))) |>
+  #ungroup() |>
+  mutate(class = case_when(is.na(class) ~ 0,
+                           .default = class)) |>
+  arrange(desc(class)) |>
+  distinct(accession, position, layer, .keep_all = TRUE) |>
+  #select(accession, position, layer, class, bio_attn_Z_smooted) |>
+  select(accession, position, layer, class, bio_attn_Z) |>
+  pivot_wider(names_from = layer,
+              #values_from = bio_attn_Z_smooted,
+              values_from = bio_attn_Z,
+              names_prefix = "layer",
+              values_fn = max) |>
+  select(-accession, -position)
+```
+
+```{r}
+write_feather(pos_class, "../data/100_small/preprocessed/pos_class.feather")
+```
+
+```{r}
+table(pos_class$class)
+
+23856/sum(c(18944,23856,412))
+```
+
+
+
+
+
+
