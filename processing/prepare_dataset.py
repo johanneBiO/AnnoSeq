@@ -208,7 +208,7 @@ def extract_accessions_from_fasta(input_path, output_path):
 #---------------------------------------------------------------------------------------#
 
 # Initialize the random number generator
-random.seed(10)
+random.seed(100)
 
 # Read adjusted sequence lengths
 csv_df = pd.read_csv("../data/complete/additional/seq_lengths_adj.csv")

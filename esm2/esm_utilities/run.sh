@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --gres=shard:23
+#SBATCH --gres=shard:10
 #SBATCH --mem=20G
 #SBATCH --time=5:00:00
 #SBATCH --nodelist=compute02,compute03,compute04,compute05
@@ -14,8 +14,8 @@
 source /home/people/jobao/miniconda3/etc/profile.d/conda.sh
 conda activate esm
 
-INPUT_FILE="../data/subset_00100/sequences/biological_seq/seq_00100.fasta"
-RES_DIR="../data/subset_00100/"
-SCR_DIR="../data/subset_00100/sequences/scrambled_seq/"
+INPUT_FILE="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/biological_seq/seq_00100.fasta"
+RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/"
+SCR_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/scrambled_seq/"
 
-python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR -n
+python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR -n -bs 10
