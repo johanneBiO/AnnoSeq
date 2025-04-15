@@ -1,18 +1,15 @@
 ##########################################################################################
-# Johanne B. Overgaard
-# Latest update: 11/4 2025
-
-# prepare_esm_input:
-# 1) Crop sequences for ESM-2.
-# 2) Generate scrambled sequences.
-# 3) Select subset of sequences from fasta file.
+# This script crops sequences to fit ESM-2 input limits, creates subsets of sequences from 
+# complete FASTA file, and generates scrambled variants.
 ##########################################################################################
 
 import os
 import random
-from pathlib import Path
 import pandas as pd
+from pathlib import Path
 
+#---------------------------------------------------------------------------------------#
+# Functions
 #---------------------------------------------------------------------------------------#
 
 def crop_sequence(seq, seq_length):
@@ -20,9 +17,11 @@ def crop_sequence(seq, seq_length):
     Crop sequences to specified length by removing positions in the tail.
 
     Args:
-    - seq: sequence.
-    - seq_length: maximum length of the sequence.
-    
+    - seq: Sequence.
+    - seq_length: Maximum length of the sequence.
+
+    Returns:
+    - Cropped sequence.
     """
 
     seq_cropped = seq[0:seq_length]
@@ -30,15 +29,18 @@ def crop_sequence(seq, seq_length):
 
 def crop_fasta(input_path, output_path, length_dict, esm_max = 1024):
     """
-    Crop sequences in fasta file to specified length by removing positions in the tail.
-    The sequences are cropped from specified length if it exists. Otherwise, it will be cropped with respect to the upper limit for ESM-2 (default: 1024).
+    Crop sequences in FASTA file to specified length by removing positions in the tail.
+    The sequences are cropped from specified length if it exists in the specified dictionary. 
+    Otherwise, it will be cropped with respect to the upper limit for ESM-2 (default: 1024).
 
     Args:  
-    - input_path: input fasta for sequences.
-    - output_path: resulting fasta file path.
-    - length_dict: dict with the maximum length for each sequence.
-    - esm_max: upper limit for ESM-2.
+    - input_path: Input FASTA for sequences.
+    - output_path: Resulting FASTA file path.
+    - length_dict: Dict with the maximum length for each sequence.
+    - esm_max: Upper limit for ESM-2.
 
+    Returns:
+    - FASTA file with cropped sequence.
     """
 
     sequences = []
@@ -74,11 +76,10 @@ def crop_fasta(input_path, output_path, length_dict, esm_max = 1024):
 
 def read_fasta(file_path):
     """
-    Read in a fasta file.
+    Read in a FASTA file.
 
     Args: 
-    - infile_path: fasta file.
-
+    - infile_path: FASTA file.
     """
 
     sequences = []
@@ -101,10 +102,12 @@ def extract_random_sample(input_path, output_path, num_sequences=100):
     Extract random sequences to generate subset.
 
     Args: 
-    - infile_path: source fasta file.
-    - output_path: subset fasta file.
-    - num_sequences: number of sequence to sample.
+    - Infile_path: Source FASTA file.
+    - Output_path: Subset FASTA file.
+    - num_sequences: Number of sequence to sample.
 
+    Returns:
+    - A subset FASTA file.
     """
 
     sequences = read_fasta(input_path)
@@ -121,6 +124,8 @@ def scramble_sequence(sequence):
     Args: 
     - sequence: sequence of interest.
 
+    Returns:
+    - Scrambled variant of the input sequence. 
     """
 
     sequence_list = list(sequence)
@@ -129,13 +134,15 @@ def scramble_sequence(sequence):
 
 def scramble_fasta(infile_path, outfile_dir, outfile_name):
     """
-    Scramble all sequences in fasta file.
+    Scramble all sequences in FASTA file.
 
      Args: 
-    - infile_path: Input fasta for sequences.
-    - outfile_dir: Name of directory for scrambled fasta files.
-    - outfile_name: Name for scrambled fasta files.
+    - infile_path: Input FASTA for sequences.
+    - outfile_dir: Name of directory for scrambled FASTA file.
+    - outfile_name: Name for scrambled FASTA file.
 
+    Returns:
+    - Scrambled FASTA file.
     """
 
     seq = ""
@@ -180,6 +187,8 @@ def extract_accessions_from_fasta(input_path, output_path):
         input_path: Path to the input FASTA file.
         output_path: Path to the output text file.
 
+    Returns:
+    - Text file with accession numbers.
     """
     
     accessions = []
@@ -194,6 +203,8 @@ def extract_accessions_from_fasta(input_path, output_path):
         for acc in accessions:
             out.write(acc + "\n")
 
+#---------------------------------------------------------------------------------------#
+# Generate datasets
 #---------------------------------------------------------------------------------------#
 
 # Read adjusted sequence lengths

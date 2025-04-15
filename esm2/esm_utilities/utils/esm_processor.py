@@ -1,9 +1,7 @@
 ##########################################################################################
-# Johanne B. Overgaard
-# Latest update: 14/4 2025
-
-# This script holds the functions used in esm_main.py to extract ESM-2 embeddings and 
-# raw (including normalized) attention scores.
+# This script contains functions used by main.py to extract ESM-2 embeddings and attention 
+# scores. 
+# Note: attention scores are aggregated using row means.
 ##########################################################################################
 
 import os
@@ -21,10 +19,10 @@ from torch.utils.data import Dataset
 
 def read_acc_seqs_from_fasta(infile_path):
     """
-    Read in a fasta file and prepare it to be used for the ESM-2 model.
+    Read in a FASTA file and prepare it to be used for the ESM-2 model.
 
     Args: 
-    - infile_path: Fasta file.
+    - infile_path: FASTA file.
     
     Returns: 
     - List of tuples. Contains accessions and sequences, e.g. [(acc, aTHNtem..)..()].
@@ -79,7 +77,7 @@ class SequenceDataset(Dataset):
 
 def load_esm_model():
     """
-    Loads the ESM-2 model and return the model and alphabet.
+    Load the ESM-2 model and return the model and alphabet.
     """
 
     # Look for GPU
@@ -103,14 +101,14 @@ def collate_fn(batch, batch_converter):
 
 def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = False):
     """
-    Compute ESM-2 representations for sequences using batching.
+    Compute ESM-2 embeddings and attention scores for sequences using batching.
 
     Args:
-    - dataloader: PyTorch DataLoader
-    - model: ESM-2 model
-    - alphabet: ESM-2 alphabet
-    - output_dir: Directory to save JSON results
-    - norm: Save the normalized attention
+    - dataloader: PyTorch DataLoader.
+    - model: ESM-2 model.
+    - alphabet: ESM-2 alphabet.
+    - output_dir: Directory to save JSON results.
+    - norm: Save the normalized attention scores.
     
     Returns:
     - Embeddings and attention scores as JSON files for each bacth.
@@ -162,7 +160,7 @@ def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = 
                 else: 
                     batch_attention_raw[j].append(token_attention_raw[i, :, :].mean(dim=1).cpu().numpy().tolist())
         
-        # Save attention data for the current batch
+        # Save attention scores for the current batch
         batch_attention_raw_file = os.path.join(batch_res_dir, f"batch_{batch_idx+1}_attn_raw.json")
         with open(batch_attention_raw_file, "w") as outfile:
             ujson.dump(batch_attention_raw, outfile)
@@ -203,7 +201,7 @@ def aggregate_batches(batch_res_dir, res_dir, layer_indices, norm = False):
     - batch_res_dir: Directory containing the batch-wise embeddings and attention JSON files.
     - res_dir: Directory where the aggregated results will be saved.
     - layer_indices: List of indices for layers, needed for attention aggregation.
-    - norm: Include normalized attention.
+    - norm: Include normalized attention scores.
 
     Returns:
     - Aggregated embeddings and attention scores as JSON files.

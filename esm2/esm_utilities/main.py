@@ -1,9 +1,8 @@
 ##########################################################################################
-# Johanne B. Overgaard
-# Latest update: 14/4 2025
-
-# This script is used for running a modified version of ESM-2 to extract the raw attention
-# scores. It is possible to run the model for scrambled sequences generated beforehand.
+# This script runs a modified version of ESM-2 to extract attention scores. Both raw and 
+# normalized attention scores are aggregated using row means.
+# Optionally, the model can be run on pre-generated scrambled sequences, which should be 
+# stored in a shared folder.
 ##########################################################################################
 
 import os
@@ -12,7 +11,7 @@ import time
 import torch
 import argparse
 from torch.utils.data import DataLoader
-from utils.esm_encode import SequenceDataset, load_esm_model, collate_fn, get_esm2_output, read_acc_seqs_from_fasta, aggregate_batches
+from esm2.esm_utilities.utils.esm_processor import SequenceDataset, load_esm_model, collate_fn, get_esm2_output, read_acc_seqs_from_fasta, aggregate_batches
 
 #---------------------------------------------------------------------------------------#
 # PREPARATION
