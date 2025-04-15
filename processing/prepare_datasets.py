@@ -217,8 +217,8 @@ csv_df = pd.read_csv("../data/complete/additional/seq_lengths_adj.csv")
 length_dict = dict(zip(csv_df['accession'], csv_df['length_adj']))
 
 # Specify the file name of the fasta and resulting cropped file
-bio_fasta = Path("../data/complete/sequences/biological_seq/UP000005640_9606_sp.fasta") 
-bio_cropped_fasta = Path("../data/complete/sequences/biological_seq/UP000005640_9606_sp_cropped.fasta")
+bio_fasta = Path("../data/complete/sequences/UP000005640_9606_sp.fasta") 
+bio_cropped_fasta = Path("../data/complete/sequences/UP000005640_9606_sp_cropped.fasta")
 
 # Crop sequences
 crop_fasta(bio_fasta, bio_cropped_fasta, length_dict, esm_max = 1024)

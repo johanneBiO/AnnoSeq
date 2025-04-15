@@ -1,0 +1,262 @@
+---
+title: "Annotation Processing"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(xml2)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(readxl)
+```
+
+This code aim to process an XML file to extract annotations and structure them into a well-organized table. XML files often contain rich metadata, but extracting relevant information requires parsing and transformation into a more readable format, such as a CSV or TSV table.
+
+The resulting annotation table will provide a structured view of the extracted data, making it easier to analyze and use in the downstream analysis.
+
+## Set up
+
+We specify the XML file and namespace for the file.
+
+```{r}
+xml_file <- "../data/_raw/UP000005640_9606.xml"  
+ns <- c(uniprot = "https://uniprot.org/uniprot")
+```
+
+## Process XML file
+
+We will create a function to process the annotations or so called features from an entry in the XML file.
+
+```{r}
+processFeatures <- function(entry, ns){
+  
+  # Extract accession for the current entry.
+  accession <- xml_text(xml_find_first(entry, ".//uniprot:accession", ns))
+  
+  # Extract sequence length from the <sequence> tag.
+  sequence <- xml_find_all(entry, ".//uniprot:sequence", ns)
+  sequence_length <- as.numeric(xml_attr(sequence[[length(sequence)]], "length"))
+  
+  # Save the length with accession.
+  length <- data.frame(
+    accession = accession,
+    length = sequence_length
+    )
+  
+  # Extract all feature elements for the current entry.
+  features <- xml_find_all(entry, ".//uniprot:feature", ns)
+
+  # Initialize a list to store feature data.
+  feature_list <- list()
+  
+  # Loop through each feature and extract information.
+  for (feature in features){
+    
+    # Get feature type, description and location.
+    feature_type <- xml_attr(feature, "type")
+    description <- xml_attr(feature, "description")
+    location <- xml_find_first(feature, ".//uniprot:location", ns)
+    
+    # Get position (for the annotation of single amino acids).
+    pos <- xml_find_first(location, ".//uniprot:position", ns)
+    
+    # Define the span of the annotated region.
+    if (!is.na(pos)){
+      start_pos <- as.numeric(xml_attr(pos, "position"))
+      end_pos <- as.numeric(xml_attr(pos, "position"))
+    } else {
+      start_pos <- xml_find_first(location, ".//uniprot:begin", ns)
+      start_pos <- as.numeric(xml_attr(start_pos, "position"))
+      end_pos <- xml_find_first(location, ".//uniprot:end", ns)
+      end_pos <- as.numeric(xml_attr(end_pos, "position"))
+    }
+    
+    # Store the feature information.
+    feature_list <- append(feature_list, list(data.frame(
+      accession = accession,
+      feature_type = feature_type,
+      description = description,
+      start_position = start_pos,
+      end_position = end_pos,
+      stringsAsFactors = FALSE
+    )))
+  }
+  
+  return(list(feature_list, length))
+}
+```
+
+We read the XML file. Note: this takes some time.
+
+```{r}
+xml_data <- read_xml(xml_file)
+  
+# Find all entry elements in the XML file
+entries <- xml_find_all(xml_data, ".//uniprot:entry", ns)
+  
+# Initialize a list to store the results
+features <- list()
+lengths <- list()
+
+entry_num = 0
+
+for (entry in entries){
+  entry_num = entry_num + 1
+  results <- processFeatures(entry, ns)
+  features <- append(features, results[[1]])
+  lengths <- rbind(lengths, results[[2]])
+  
+  if (entry_num %% 1000 == 0){
+    print(paste(entry_num, "entries completed"))
+  }
+}
+
+# Combine the feature data from all chunks into a single data.table
+feature_data <- tibble(do.call(rbind, features))
+length_data <- tibble(lengths)
+```
+
+We save the results.
+
+```{r}
+saveRDS(feature_data, file = "../data/complete/annotations/features.rds")
+```
+
+## Filter TrEMBL sequences
+
+We are only interested in the SWISS-PROT entries as these are manually annotated unlike TrEMBL sequences. The accessions belonging to each database are stored in txt files loaded below.
+
+```{r}
+accessions_sp <- read.table(file = "../data/complete/additional/UP000005640_9606_sp_acc.txt") |>
+  dplyr::rename(accession = V1)
+
+accessions_tr <- read.table(file = "../data/complete/additional/UP000005640_9606_tr_acc.txt") |>
+  dplyr::rename(accession = V1)
+```
+
+We will filter out TrEMBL sequences for both the feature and length data generated above.
+
+```{r}
+feature_data <- feature_data |>
+  filter(accession %in% accessions_sp$accession)
+
+length_data <- length_data |>
+  filter(accession %in% accessions_sp$accession)
+```
+
+We do a sanity check to see if all SWISS-PROT accessions appear in the feature table.
+
+```{r}
+print(paste("Accessions from SWISS-PROT:", 
+            length(unique(feature_data$accession))))
+print(paste("Unique accessions in feature table found in accession list:", 
+            sum(unique(feature_data$accession) %in% accessions_sp$accession)))
+```
+
+The intermediate results are saved.
+
+```{r}
+saveRDS(feature_data, file = "../data/complete/annotations/features_filter01_inter.rds")
+```
+
+## Filter annotation types
+
+We are not interested in all annotation types from UniProt. We read in a file describing whether to keep a annotation or not.
+
+```{r}
+annotation_types <- read_excel(path = "../other/anno_keep_list.xlsx", 
+                               sheet = "R")
+```
+
+The tibbles are joined by feature type.
+
+```{r}
+feature_data <- left_join(feature_data, annotation_types, by = "feature_type")
+```
+
+We filter the annotations based on the keep column.
+
+```{r}
+feature_data <- feature_data |>
+  filter(keep == 1) |>
+  select(!keep) |>
+  relocate(category,
+           .after = accession)
+```
+
+The intermediate results are saved.
+
+```{r}
+saveRDS(feature_data, file = "../data/complete/annotations/features_filter02_inter.rds")
+```
+
+## Filter annotations beyond position 1024
+
+The ESM-2 model will only consider proteins of 1024 amino acids or less. We consider the quantiles.
+
+```{r}
+quantile(length_data$length, probs = c(0.25, 0.5, 0.75, 0.90, 0.95))
+```
+
+Let's get the percentage of sequences longer than 1024.
+
+```{r}
+n <- sum(length_data_sp$length > 1024)
+
+print(paste("Percentage of sequences larger than 1024:", round(n/length((length_data_sp$length))*100, digits = 2)))
+```
+
+For the long sequences, we chose to crop them and only consider the first 1024 positions. However, we wish to avoid cropping a sequence in the middle of an annotation. If found to be in the middle of an annotation for position 1024, the edge will be define as the position prior to the start of the annotated region or site.
+
+```{r}
+length_adjusted <- left_join(feature_data,
+                             length_data,
+                             by = "accession") |>
+  filter(length > 1024, start_position < 1024, end_position > 1024) |>
+  group_by(accession) |>
+  mutate(length_adj = min(start_position) - 1) |>
+  count(accession, length_adj) |>
+  select(accession, length_adj)
+```
+
+We will join the adjusted length with the filtered annotations.
+
+```{r}
+feature_data <- left_join(feature_data,
+                          length_data,
+                          by = "accession") |>
+  left_join(length_adjusted,
+            by = "accession") |>
+  mutate(length_adj = case_when(is.na(length_adj) ~ length,
+                                .default = length_adj),
+         length_adj = case_when(length_adj > 1024 ~ 1024,
+                                .default = length_adj))
+```
+
+Finally, we remove the annotations that does not appear in the cropped sequence. Furthermore, we remove annotation without start and end positions.
+
+```{r}
+feature_data <- feature_data |>
+  mutate(keep = case_when(start_position <= length_adj ~ "Yes",
+                          start_position > length_adj ~ "No")) |>
+  filter(keep == "Yes",
+         !is.na(start_position),
+         !is.na(end_position)) |>
+  select(!keep)
+```
+
+We save the results.
+
+```{r}
+saveRDS(feature_data, file = "../data/complete/annotations/features_filter03_final.rds")
+```
+
+To adjust the sequence length, we will save the length data in a CSV file.
+
+```{r}
+write.csv(length_adjusted, "../data/complete/additional/seq_lengths_adj.csv", row.names = FALSE)
+```

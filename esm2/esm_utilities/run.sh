@@ -14,8 +14,8 @@
 source /home/people/jobao/miniconda3/etc/profile.d/conda.sh
 conda activate esm
 
-INPUT_FILE="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/biological_seq/seq_00100.fasta"
-RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/"
-SCR_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/scrambled_seq/"
+INPUT_FILE="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_01000/sequences/biological_seq/seq_01000.fasta"
+RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_01000/"
+SCR_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_01000/sequences/scrambled_seq/"
 
-python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR -n -bs 10
+python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR -bs 10
