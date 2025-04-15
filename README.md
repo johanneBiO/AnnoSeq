@@ -10,32 +10,32 @@ The project has been supervised by Associate Professor Kristoffer Vitting-Seerup
 
 ## Project Organization
 
-.
-├── /data/                    # Directory to store data (data not included in repo)
-│   └── README.md             # Instructions on how to obtain the data and suggestion for data folder structure
-│
-├── /esm2/                    
-│   ├── esm                   # ESM model code with modifications
-│   │   ├── ...
-│   │
-│   └── esm_utilities         
-│       ├── utils
-│       ├── main.py
-│       ├── run.sh
-│       └── esm_evn.yml              
-│
-├── /processing/              # Scripts for ...
-│   ├──              
-│   ├── 
-│   └── ...                  
-│
-├── /analysis/                # Scripts for ...
-│   ├──              
-│   ├── 
-│   └── ...           
-│
-├── LICENSE                   # ???
-└── README.md               
+    .
+    ├── /data/                    # Directory to store data (data not included in repo)
+    │   └── README.md             # Instructions on how to obtain the data and suggestion for data folder structure
+    │
+    ├── /esm2/                    
+    │   ├── esm                   # ESM model code with modifications
+    │   │   ├── ...
+    │   │
+    │   └── esm_utilities         
+    │       ├── utils
+    │       ├── main.py
+    │       ├── run.sh
+    │       └── esm_evn.yml              
+    │
+    ├── /processing/              # Scripts for ...
+    │   ├──              
+    │   ├── 
+    │   └── ...                  
+    │
+    ├── /analysis/                # Scripts for ...
+    │   ├──              
+    │   ├── 
+    │   └── ...           
+    │
+    ├── LICENSE                   # ???
+    └── README.md               
 
 ## Acknowledgement
 
