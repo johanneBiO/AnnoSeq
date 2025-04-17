@@ -16,6 +16,8 @@ from pathlib import Path
 from torch.utils.data import Dataset
 
 #---------------------------------------------------------------------------------------#
+# Functions
+#---------------------------------------------------------------------------------------#
 
 def read_acc_seqs_from_fasta(infile_path):
     """
@@ -28,14 +30,15 @@ def read_acc_seqs_from_fasta(infile_path):
     - List of tuples. Contains accessions and sequences, e.g. [(acc, aTHNtem..)..()].
     """
     
+    infile = Path(infile_path)
+    
+    if not infile.is_file():
+        print(f"The input file was invalid. Invalid file was {infile}")
+
     accs = list()
     sequences = list()
     seq = ""
     read_acc = False
-
-    infile = Path(infile_path)
-    if not infile.is_file():
-        print(f"The input file was invalid. Invalid file was {infile}")
 
     infile = open(infile, "r")
     readfile = infile.readlines()

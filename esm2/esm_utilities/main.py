@@ -11,7 +11,7 @@ import time
 import torch
 import argparse
 from torch.utils.data import DataLoader
-from utils.esm_processor import SequenceDataset, load_esm_model, collate_fn, get_esm2_output, read_acc_seqs_from_fasta, aggregate_batches
+from utils.esm_processors import SequenceDataset, load_esm_model, collate_fn, get_esm2_output, read_acc_seqs_from_fasta, aggregate_batches
 
 #---------------------------------------------------------------------------------------#
 # PREPARATION
