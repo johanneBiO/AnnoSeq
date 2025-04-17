@@ -1,5 +1,8 @@
 *.pyc
-/data/
+/data/_raw/
+/data/complete/
+/data/subset_00100/
+/data/subset_01000/
 /other/
 /reports/
 /esm_remove/
