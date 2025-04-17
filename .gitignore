@@ -1,9 +1,15 @@
+# Junk
 *.pyc
+.Rproj.user/
+*.Rproj
+
+# Data
 /data/_raw/
 /data/complete/
 /data/subset_00100/
 /data/subset_01000/
-/other/
+
+# Other
 /reports/
 /remove/
 /esm2/esm_utilities/example_proteins/
@@ -12,6 +18,4 @@
 smoothing.R
 /code/processing/prepare_classification.qmd
 /code/processing/process_esm_output.qmd
-.Rproj.user/
-*.Rproj
 process_esm_as_vectors.qmd
