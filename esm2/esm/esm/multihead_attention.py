@@ -376,9 +376,9 @@ class MultiheadAttention(nn.Module):
         if before_softmax:
             return attn_weights, v
 
-        ##### MODIFICATION #####
+        ### MODIFICATION ##############
         attn_weights_raw = attn_weights
-        ########################
+        ###############################
 
         attn_weights_float = utils_softmax(attn_weights, dim=-1, onnx_trace=self.onnx_trace)
         attn_weights = attn_weights_float.type_as(attn_weights)
@@ -398,24 +398,21 @@ class MultiheadAttention(nn.Module):
             attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
         attn = self.out_proj(attn)
         attn_weights: Optional[Tensor] = None
+        
+        ### MODIFICATION ######################################
         if need_weights:
             attn_weights = attn_weights_float.view(
                 bsz, self.num_heads, tgt_len, src_len
             ).type_as(attn).transpose(1, 0)
-
-            ##### MODIFICATION #####
             attn_weights_raw = attn_weights_raw.view(
                 bsz, self.num_heads, tgt_len, src_len
             ).type_as(attn).transpose(1, 0)
-            ########################
 
             if not need_head_weights:
                 # average attention weights over heads
-                attn_weights = attn_weights.mean(dim=0)
-                
-                ##### MODIFICATION #####
+                attn_weights = attn_weights.mean(dim=0)  
                 attn_weights_raw = attn_weights_raw.mean(dim=0)
-                ########################
+        #######################################################
 
         return attn, attn_weights, attn_weights_raw
 

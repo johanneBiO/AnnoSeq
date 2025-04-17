@@ -104,11 +104,11 @@ class ESM2(nn.Module):
         if need_head_weights:
             attn_weights = []
 
-        ##### MODIFICATION #####
+        ### MODIFICATION ########
         if not need_head_weights:
             attn_raw_mat = []
             attn_norm_mat = []
-        ########################
+        #########################
 
         # (B, T, E) => (T, B, E)
         x = x.transpose(0, 1)
@@ -129,11 +129,11 @@ class ESM2(nn.Module):
                 # (H, B, T, T) => (B, H, T, T)
                 attn_weights.append(attn.transpose(1, 0))
             
-            ##### MODIFICATION #####
+            ### MODIFICATION ################
             if not need_head_weights:
                 attn_raw_mat.append(attn_raw)
                 attn_norm_mat.append(attn)
-            ########################
+            #################################
 
         x = self.emb_layer_norm_after(x)
         x = x.transpose(0, 1)  # (T, B, E) => (B, T, E)
@@ -144,9 +144,9 @@ class ESM2(nn.Module):
         
         x = self.lm_head(x)
 
-        ##### MODIFICATION #####
+        ### MODIFICATION ######################################################################################################
         result = {"logits": x, "representations": hidden_representations, "attn_raw": attn_raw_mat, "attn_norm": attn_norm_mat}
-        ########################
+        #######################################################################################################################
 
         if need_head_weights:
             # attentions: B x L x H x T x T
