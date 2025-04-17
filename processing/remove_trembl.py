@@ -24,9 +24,9 @@ except IOError as error:
 # Process FASTA file
 #---------------------------------------------------------------------------------------#
 
-sp_count = 0         # Swiss-Prot count
+sp_count = 0         # SWISS-PROT count
 tr_count = 0         # TrEMBL count
-write_fasta = False  # Flag for writing Swiss-Prot sequences
+write_fasta = False  # Flag for writing SWISS-PROT sequences
 
 for line in infile:
     if line.startswith(">"):                            

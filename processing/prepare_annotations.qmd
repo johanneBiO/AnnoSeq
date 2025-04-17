@@ -1,5 +1,5 @@
 ---
-title: "Annotation Processing"
+title: "Annotation Preprocessing"
 format: html
 editor: visual
 ---
@@ -14,13 +14,11 @@ library(stringr)
 library(readxl)
 ```
 
-This code aim to process an XML file to extract annotations and structure them into a well-organized table. XML files often contain rich metadata, but extracting relevant information requires parsing and transformation into a more readable format, such as a CSV or TSV table.
-
-The resulting annotation table will provide a structured view of the extracted data, making it easier to analyze and use in the downstream analysis.
+This code aim to process an XML file to extract annotations from the human reference proteome in UniProt and structure them into a well-organized table. XML files often contain rich metadata, but extracting relevant information requires parsing and transformation into a more readable format such as a CSV or TSV table. The resulting annotation table will provide a structured view of the extracted data, making it easier to analyze and use in the downstream analysis. Here, I chose to simply save the R object.
 
 ## Set up
 
-We specify the XML file and namespace for the file.
+The XML file and namespace for the file are specified.
 
 ```{r}
 xml_file <- "../data/_raw/UP000005640_9606.xml"  
@@ -29,7 +27,7 @@ ns <- c(uniprot = "https://uniprot.org/uniprot")
 
 ## Process XML file
 
-We will create a function to process the annotations or so called features from an entry in the XML file.
+I will create a function to process the sequence annotations or so called features from an entry in the XML file.
 
 ```{r}
 processFeatures <- function(entry, ns){
@@ -90,7 +88,7 @@ processFeatures <- function(entry, ns){
 }
 ```
 
-We read the XML file. Note: this takes some time.
+Read the XML file. Note: this will take some time due to the many entries.
 
 ```{r}
 xml_data <- read_xml(xml_file)
@@ -120,10 +118,10 @@ feature_data <- tibble(do.call(rbind, features))
 length_data <- tibble(lengths)
 ```
 
-We save the results.
+Save the results.
 
 ```{r}
-saveRDS(feature_data, file = "../data/complete/annotations/features.rds")
+saveRDS(feature_data, file = "../data/complete/annotations/interim/anno_initial.rds")
 ```
 
 ## Filter TrEMBL sequences
@@ -138,7 +136,7 @@ accessions_tr <- read.table(file = "../data/complete/additional/UP000005640_9606
   dplyr::rename(accession = V1)
 ```
 
-We will filter out TrEMBL sequences for both the feature and length data generated above.
+I will filter out TrEMBL sequences for both the feature and length data generated above.
 
 ```{r}
 feature_data <- feature_data |>
@@ -148,7 +146,7 @@ length_data <- length_data |>
   filter(accession %in% accessions_sp$accession)
 ```
 
-We do a sanity check to see if all SWISS-PROT accessions appear in the feature table.
+I do a sanity check to see if all SWISS-PROT accessions appear in the feature table.
 
 ```{r}
 print(paste("Accessions from SWISS-PROT:", 
@@ -160,12 +158,12 @@ print(paste("Unique accessions in feature table found in accession list:",
 The intermediate results are saved.
 
 ```{r}
-saveRDS(feature_data, file = "../data/complete/annotations/features_filter01_inter.rds")
+saveRDS(feature_data, file = "../data/complete/annotations/interim/anno_filter1.rds")
 ```
 
 ## Filter annotation types
 
-We are not interested in all annotation types from UniProt. We read in a file describing whether to keep a annotation or not.
+I am not interested in all annotation types from UniProt. Thus, I read in a file describing whether to keep a annotation or not.
 
 ```{r}
 annotation_types <- read_excel(path = "../other/anno_keep_list.xlsx", 
@@ -178,7 +176,7 @@ The tibbles are joined by feature type.
 feature_data <- left_join(feature_data, annotation_types, by = "feature_type")
 ```
 
-We filter the annotations based on the keep column.
+The annotations are filtered based on the keep column.
 
 ```{r}
 feature_data <- feature_data |>
@@ -191,26 +189,20 @@ feature_data <- feature_data |>
 The intermediate results are saved.
 
 ```{r}
-saveRDS(feature_data, file = "../data/complete/annotations/features_filter02_inter.rds")
+saveRDS(feature_data, file = "../data/complete/annotations/interim/anno_filter2.rds")
 ```
 
 ## Filter annotations beyond position 1024
 
-The ESM-2 model will only consider proteins of 1024 amino acids or less. We consider the quantiles.
+The ESM-2 model will only consider proteins of 1024 amino acids or less. Let's get the percentage of sequences longer than 1024.
 
 ```{r}
-quantile(length_data$length, probs = c(0.25, 0.5, 0.75, 0.90, 0.95))
+n <- sum(length_data$length > 1024)
+
+print(paste("Percentage of sequences larger than 1024:", round(n/length((length_data$length))*100, digits = 2)))
 ```
 
-Let's get the percentage of sequences longer than 1024.
-
-```{r}
-n <- sum(length_data_sp$length > 1024)
-
-print(paste("Percentage of sequences larger than 1024:", round(n/length((length_data_sp$length))*100, digits = 2)))
-```
-
-For the long sequences, we chose to crop them and only consider the first 1024 positions. However, we wish to avoid cropping a sequence in the middle of an annotation. If found to be in the middle of an annotation for position 1024, the edge will be define as the position prior to the start of the annotated region or site.
+For the long sequences, I will crop them and only consider the first 1024 positions. However, I wish to avoid cropping a sequence in the middle of an annotation. If found to be in the middle of an annotation for position 1024, the edge will be define as the position prior to the start of the annotated region or site.
 
 ```{r}
 length_adjusted <- left_join(feature_data,
@@ -223,7 +215,7 @@ length_adjusted <- left_join(feature_data,
   select(accession, length_adj)
 ```
 
-We will join the adjusted length with the filtered annotations.
+I join the adjusted length with the filtered annotations.
 
 ```{r}
 feature_data <- left_join(feature_data,
@@ -237,7 +229,7 @@ feature_data <- left_join(feature_data,
                                 .default = length_adj))
 ```
 
-Finally, we remove the annotations that does not appear in the cropped sequence. Furthermore, we remove annotation without start and end positions.
+Finally, I remove the annotations that does not appear in the cropped sequence. Furthermore, I remove annotations without start and end positions.
 
 ```{r}
 feature_data <- feature_data |>
@@ -249,13 +241,13 @@ feature_data <- feature_data |>
   select(!keep)
 ```
 
-We save the results.
+I save the final results.
 
 ```{r}
-saveRDS(feature_data, file = "../data/complete/annotations/features_filter03_final.rds")
+saveRDS(feature_data, file = "../data/complete/annotations/processed/anno.rds")
 ```
 
-To adjust the sequence length, we will save the length data in a CSV file.
+To adjust the sequence length, I will save the length data in a CSV file.
 
 ```{r}
 write.csv(length_adjusted, "../data/complete/additional/seq_lengths_adj.csv", row.names = FALSE)
