@@ -1,57 +1,22 @@
 ##########################################################################################
-# Removes sequences from TrEMBL in Uniprot fasta file. 
+# Removes sequences from TrEMBL in the raw fasta file. 
 ##########################################################################################
 
-import re
-import sys
+import os
+from utils.seq_processors import remove_trembl, extract_accessions_from_fasta
 
 #---------------------------------------------------------------------------------------#
-# Input file name
+# MAIN
 #---------------------------------------------------------------------------------------#
 
-fsa_name = input("Enter the name of the UniProt FASTA file: ")
+# Define file names
+fasta_file = "../data/_raw/UP000005640_9606.fasta"
+res_dir = "../data/complete"
+fasta_sp = os.path.join(res_dir, "sequences/seq_complete_sp.fasta")
+txt_acc = os.path.join(res_dir, "additional/accessions_sp.txt")
 
-try:
-    infile = open(fsa_name, "r")
-    sp_fasta_outfile = open(f"{fsa_name.rsplit('.', 1)[0]}_sp.fasta", "w")
-    sp_acc_outfile = open(f"{fsa_name.rsplit('.', 1)[0]}_sp_acc.txt", "w")
-    tr_acc_outfile = open(f"{fsa_name.rsplit('.', 1)[0]}_tr_acc.txt", "w")
-except IOError as error:
-    print("Can't open file, reason:", str(error))
-    sys.exit(1)
+# Remove TrEMBL entries
+remove_trembl(fasta_file, fasta_sp)
 
-#---------------------------------------------------------------------------------------#
-# Process FASTA file
-#---------------------------------------------------------------------------------------#
-
-sp_count = 0         # SWISS-PROT count
-tr_count = 0         # TrEMBL count
-write_fasta = False  # Flag for writing SWISS-PROT sequences
-
-for line in infile:
-    if line.startswith(">"):                            
-        parts = line.split("|")                         
-        if len(parts) > 2:
-            accession = parts[1]                        
-            if line.startswith(">sp|"):                 
-                sp_count += 1
-                sp_acc_outfile.write(accession + "\n")  
-                sp_fasta_outfile.write(line)            
-                write_fasta = True                      
-            elif line.startswith(">tr|"):               
-                tr_count += 1
-                tr_acc_outfile.write(accession + "\n")  
-                write_fasta = False                     
-            else:
-                write_fasta = False                     
-    else:
-        if write_fasta:                                
-            sp_fasta_outfile.write(line)
-
-print("Number of Swiss-Prot sequences:", sp_count)
-print("Number of TrEMBL accessions:", tr_count)
-
-infile.close()
-sp_fasta_outfile.close()
-sp_acc_outfile.close()
-tr_acc_outfile.close()
+# Get the accessions
+extract_accessions_from_fasta(fasta_sp, txt_acc)
