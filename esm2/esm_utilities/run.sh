@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --gres=shard:23
 #SBATCH --mem=20G
-#SBATCH --time=24:00:00
+#SBATCH --time=10:00:00
 #SBATCH --nodelist=compute02,compute03,compute04,compute05
 #SBATCH --output=/home/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/esm2/esm_utilities/slurm_logs/job-%j.out 
 #SBATCH --error=/home/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/esm2/esm_utilities/slurm_logs/job-%j.err 
@@ -26,10 +26,10 @@ conda activate esm
 #RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_01000/"
 #SCR_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_01000/sequences/scrambled_seq/"
 
-#python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR -bs 10
+#python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR
 
 ### Complete
 INPUT_FILE="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/complete/sequences/seq_complete_sp_cropped.fasta"
 RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/complete/"
 
-python main.py -seq $INPUT_FILE -res $RES_DIR -bs 10
+python main.py -seq $INPUT_FILE -res $RES_DIR
