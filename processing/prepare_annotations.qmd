@@ -228,7 +228,8 @@ For the long sequences, I will crop them and only consider the first 1024 positi
 length_adjusted <- feature_data |>
   group_by(accession) |>
   summarise(ranges = list(reduce(IRanges(start = start_position,
-                                         end = end_position))),
+                                         end = end_position),
+                                 min.gapwidth = 0)),
             .groups = "drop") |>
   mutate(ranges = lapply(ranges, 
                          function(r) {tibble(start = start(r), 
@@ -276,5 +277,7 @@ saveRDS(feature_data, file = file.path(data_complete_path,
 To adjust the sequence length, I will save the length data in a CSV file.
 
 ```{r}
-write.csv(length_adjusted, "../data/complete/additional/seq_lengths_adj.csv", row.names = FALSE)
+write.csv(length_adjusted, file = file.path(data_complete_path,
+                                            "additional/seq_lengths_adj.csv"),
+                                            row.names = FALSE)
 ```
