@@ -1,0 +1,171 @@
+---
+title: "Exploratory Annalysis of Annotations"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(here)
+library(tidyr)
+library(dplyr)
+library(scales)
+
+source("utils/theme.R")
+```
+
+This code explores the the frequency of the different annotation types within the dataset.
+
+## Set up
+
+I will load both the final processed annotations and the annotations from before the final filtering, in order to assess which annotations are excluded due to their absence in the cropped sequences.
+
+```{r}
+data_path <- here("data/complete/annotations")
+res_path <- here("reports/figures")
+
+anno <- readRDS(file = file.path(data_path, 
+                                 "processed/anno.rds"))
+
+anno_filter3 <- readRDS(file.path(data_path, 
+                                  "interim/anno_filter3.rds"))
+```
+
+We will add a column describing if the annotation is part of the cropped sequence or not.
+
+```{r}
+anno_filter3 <- anno_filter3 |>
+  mutate(included = case_when(start_position <= length_adj ~ "Yes",
+                              start_position > length_adj ~ "No"))
+```
+
+## Excluded annotations
+
+Let's look at the number of annotations types being exluded.
+
+```{r}
+anno_numbers <- anno_filter3 |>
+  group_by(included, category, feature_type) |>
+  summarise(n = n(),
+            .groups = "drop")
+
+anno_numbers
+```
+
+```{r}
+total <- sum(anno_numbers$n)
+
+excluded <- anno_numbers |>
+  filter(included == "No") |>
+  pull(n) |>
+  sum()
+
+included <- anno_numbers |>
+  filter(included == "Yes") |>
+  pull(n) |>
+  sum()
+
+print(paste("Included (%):", round(included/total*100, digits = 2)))
+print(paste("Excluded (%):", round(excluded/total*100, digits = 2)))
+```
+
+We are in fact missing 13.83% of the available annotations due to the limitation of the ESM-2 model. Let's see if this will cause a problem for analyzing certain annotation types.
+
+```{r}
+anno_filter3 |>
+  group_by(category, feature_type, included) |>
+  summarise(n = n()) |>
+  mutate(freq = n / sum(n),
+         pfreq = paste(as.character(round(freq*100, digits = 1)), "%", sep = ""),
+         yfreq = case_when(included == "Yes" ~ 0 - 0.02,
+                           included == "No" ~  1 + 0.02),
+         feature_type = str_to_title(feature_type),
+         category = str_to_title(category),
+         category = case_when(category == "Amino Acid Modification" ~ "AAM",
+                              category == "Molecule Processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category)) |>
+  ggplot(mapping = aes(x = feature_type,
+                       y = freq,
+                       fill = included)) +
+  geom_bar(stat = "identity",
+           color = "white") +
+  geom_text(mapping = aes(y = yfreq,
+                          label = pfreq,
+                          color = included),
+            size = 2.5) + 
+  labs(x = "Feature type",
+       y = "Proportion",
+       fill = "Included") + 
+  scale_fill_manual(values = c("#990000", "#1f618d")) +
+  scale_color_manual(values = c("#990000", "#1f618d")) +
+  facet_grid(cols = vars(category),
+             scales = "free_x",
+             space = "free_x") +
+  guides(color = "none") +
+  main_theme + 
+  theme(axis.text.x = element_text(angle = 50, 
+                                   hjust = 1),
+        strip.background = element_rect(fill="#cccccc", 
+                                        color = "#cccccc"),
+        strip.text=element_text(color="black", 
+                                face = "bold",
+                                size = 11),
+        axis.ticks.x = element_blank(),
+        plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
+        panel.spacing = unit(0.4, "lines"))
+
+ggsave(filename = file.path(res_path, "included_anno.png"), width = 9, height = 5, dpi = 300)
+```
+
+## Annotation frequency
+
+I take a look at the frequency of the different annotations across the complete set and the subsets. Let's join the sets with a column marking the dataset type.
+
+```{r}
+data_path <- here("data/complete/annotations")
+res_path <- here("reports/figures")
+
+acc_00100 <- read.table(file = here("data/subset_00100/additional/accessions.txt"))
+acc_01000 <- read.table(file = here("data/subset_00100/additional/accessions.txt"))
+```
+
+```{r}
+anno |>
+  group_by(category, feature_type) |>
+  mutate(feature_type = str_to_title(feature_type),
+         category = str_to_title(category),
+         category = case_when(category == "Amino Acid Modification" ~ "AAM",
+                              category == "Molecule Processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category)) |>
+  ggplot(mapping = aes(x = feature_type)) +
+  geom_bar(fill = "#1f618d") +
+  #geom_text(mapping = aes(y = yfreq,
+                          #label = pfreq,
+                          #color = included),
+            #size = 2.5) + 
+  labs(x = "Feature type",
+       y = "Frequency") + 
+  facet_grid(cols = vars(category),
+             scales = "free_x",
+             space = "free_x") +
+  scale_y_continuous(breaks = seq(0, 60000, by = 10000),
+                     labels = label_number(scale = 1e-3, suffix = "K")) + 
+  main_theme + 
+  theme(axis.text.x = element_text(angle = 50, 
+                                   hjust = 1),
+        strip.background = element_rect(fill="#cccccc", 
+                                        color = "#cccccc"),
+        strip.text=element_text(color="black", 
+                                face = "bold",
+                                size = 11),
+        axis.ticks.x = element_blank(),
+        plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
+        panel.spacing = unit(0.4, "lines"))
+
+#ggsave(filename = file.path(res_path, "included_anno.png"), width = 9, height = 5, dpi = 300)
+```
