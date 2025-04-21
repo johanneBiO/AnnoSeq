@@ -16,7 +16,7 @@ library(IRanges)
 res_path <- "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/figures/"
 ```
 
-I have ran the ESM-2 model for 100 sequences and extracted the raw and normalized attention scores for each self-attention layer. To compare the biological signal with a baseline, we also ran the model for 5 scramble sequences per biological sequence. The attention scores have been aggregated into vectors by taken the row mean or 90% quantile to obtain an attention score per position. For the scrambled sequences, we afterwards summarize the results by computing the mean, standard deviation, minimum and maximum attention per position across the 5 sequences. 
+I have ran the ESM-2 model for 100 sequences and extracted the raw and normalized attention scores for each self-attention layer. To compare the biological signal with a baseline, we also ran the model for 5 scramble sequences per biological sequence. The attention scores have been aggregated into vectors by taken the row mean or 90% quantile to obtain an attention score per position. For the scrambled sequences, we afterwards summarize the results by computing the mean, standard deviation, minimum and maximum attention per position across the 5 sequences.
 
 Let's read the data.
 
@@ -76,7 +76,7 @@ plotDistAttention(attn_raw_q90, "Attention: Raw, Aggregation: Q90") +
 
 There seems to be a bigger difference between the distributions for the attention scores after aggregating using the 90% quantile.
 
-The table also contains a Z-score for the attention signal (bio_attn_Z). The Z-score is a normalized biological signal calculated per position by subtracting the mean of the attention across the 5 scrambled sequences divided by the standard deviation. 
+The table also contains a Z-score for the attention signal (bio_attn_Z). The Z-score is a normalized biological signal calculated per position by subtracting the mean of the attention across the 5 scrambled sequences divided by the standard deviation.
 
 $$Z = \frac{A_{bio}-A_{\mu_{scr}}}{A_{\sigma_{scr}}}$$
 
@@ -130,7 +130,7 @@ features_expand <- features |>
   select(accession, position, category, feature_type, description)
 ```
 
-We get the sequence length. As not all sequences have annotated positions, we can not achieve the information from the feature table. 
+We get the sequence length. As not all sequences have annotated positions, we can not achieve the information from the feature table.
 
 ```{r}
 seq_length <- attn_raw_mean |>
@@ -138,7 +138,7 @@ seq_length <- attn_raw_mean |>
   summarise(length = max(position))
 ```
 
-We join the annotations and lengths with the preprocessed attention weights. 
+We join the annotations and lengths with the preprocessed attention weights.
 
 ```{r}
 addFeatures <- function(attn){
@@ -236,7 +236,7 @@ smoothAttention <- function(attention, method = "gaussian", window = 11, sigma =
 }
 ```
 
-To summarize the attention, I average the attention weights for each position within a given feature type across layers. 
+To summarize the attention, I average the attention weights for each position within a given feature type across layers.
 
 ```{r}
 plotHeatmap <- function(data, discrete = TRUE){
@@ -306,7 +306,7 @@ plotHeatmap <- function(data, discrete = TRUE){
 }
 ```
 
-We look at the pattern for the attention weights aggregated by taken the average. 
+We look at the pattern for the attention weights aggregated by taken the average.
 
 ```{r}
 plotHeatmap(attn_raw_mean, discrete = FALSE) 
@@ -328,7 +328,7 @@ plotHeatmap(attn_raw_q90, discrete = FALSE)
 plotHeatmap(attn_raw_q90, discrete = TRUE) 
 ```
 
-We look at the mean attention in a slightly different way. 
+We look at the mean attention in a slightly different way.
 
 ```{r}
 plotPath <- function(data){
@@ -359,15 +359,16 @@ plotPath <- function(data){
 
 plotPath(attn_raw_mean)
 ```
+
 ```{r}
 plotPath(attn_raw_q90)
 ```
 
 ## Visualize examples
 
-Above, I only considered the raw attention weights. When using the normalized weights, we force the scramble sequences to have more signal than they actually have because the softmax will put all weights between 0 and 1 summing to 1 per row. This will make the true biological signal vanish when comparing to the baseline. As a results, biological interesting region might not be detected. 
+Above, I only considered the raw attention weights. When using the normalized weights, we force the scramble sequences to have more signal than they actually have because the softmax will put all weights between 0 and 1 summing to 1 per row. This will make the true biological signal vanish when comparing to the baseline. As a results, biological interesting region might not be detected.
 
-We define a function to plot the attention signal with features for a given sequences within a given layer. 
+We define a function to plot the attention signal with features for a given sequences within a given layer.
 
 ```{r}
 plotExample <- function(data_attn, data_feature, acc, L){
@@ -493,7 +494,7 @@ plotExample(attn_raw_mean, features, ex, 33)
 
 ## Capturing Sites and Regions
 
-We wish to see how large a proportion of sites and regions we can capture when extracting regions with a high attention signal across layers. First, we will just consider each position as an observation in itself. 
+We wish to see how large a proportion of sites and regions we can capture when extracting regions with a high attention signal across layers. First, we will just consider each position as an observation in itself.
 
 ```{r}
 plotCapPos <- function(attn, threshold){
@@ -553,7 +554,7 @@ plotCapPos <- function(attn, threshold){
 }
 ```
 
-In the plot below, a position is consider biological relevant, if the Z score is above 2. That is, the Z score is above 2 standard deviations. 
+In the plot below, a position is consider biological relevant, if the Z score is above 2. That is, the Z score is above 2 standard deviations.
 
 ```{r}
 plotCapPos(attn_raw_mean, 2)
@@ -725,8 +726,6 @@ region_extract <- attn_raw_mean |>
   filter(high == 1)
 ```
 
-
-
 ```{r}
 res <- c()
 
@@ -789,8 +788,6 @@ for (lay in 1:33){
 
 ```
 
-
-
 ```{r}
 res |>
   arrange(category, feature_type) |>
@@ -833,27 +830,3 @@ res |>
     scale_y_discrete(expand = c(0, 0)) + 
     theme_void()
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
