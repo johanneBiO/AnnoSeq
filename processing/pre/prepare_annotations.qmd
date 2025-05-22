@@ -11,6 +11,7 @@ library(here)
 library(xml2)
 library(tidyr)
 library(dplyr)
+library(purrr)
 library(stringr)
 library(readxl)
 library(IRanges)
@@ -281,3 +282,20 @@ write.csv(length_adjusted, file = file.path(data_complete_path,
                                             "additional/seq_lengths_adj.csv"),
                                             row.names = FALSE)
 ```
+
+## Expanded annotations
+
+I will also save an expanded version of the annotation table. This will describe the position-wise annotation.
+
+```{r}
+feature_data_expand <- feature_data |>
+  distinct(accession, start_position, end_position, category, feature_type) |>
+  mutate(position = map2(start_position, end_position, seq)) |>
+  unnest(position) |>
+  select(accession, position, category, feature_type) 
+
+saveRDS(feature_data_expand, file = file.path(data_complete_path,
+                                              "annotations/processed/anno_expanded.rds"))
+```
+
+
