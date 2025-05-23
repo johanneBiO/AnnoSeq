@@ -1,0 +1,109 @@
+---
+title: "Classification of Positions"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(here)
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(readr)
+library(knitr)
+library(stringr)
+
+source("utils/theme.R")
+source("utils/smoothing.R")
+source("utils/classification.R")
+```
+
+## Prepare Data
+
+Let's read in the dataset for the 1000 sequences containing raw attention scores.
+
+```{r}
+# Data paths
+data_path <- here("data/complete/annotations")
+res_path <- here("reports/figures")
+
+# Attention scores 
+attn_01000_raw <- readRDS(file = file.path(here("data/subset_01000/esm_processed/attn_raw.rds")))
+
+# Load the annotations
+anno <- readRDS(file = file.path(here("data/complete/annotations/processed/anno.rds")))
+
+# Select relevant columns
+attn_01000_raw <- attn_01000_raw |>
+  dplyr::select(accession, layer, position, bio_attn, bio_attn_Z)
+```
+
+We alter the format of the data. We wish to see if the classification benefits from a transformation of the attention using scrambled sequences to reduce the noise. Thus, we will run the analysis for two datasets and compare the final results to decide on the approach for full set.
+
+```{r}
+data_01000_attnR <- prepForClass(anno_tbl = anno,
+                                 attn_tbl = attn_01000_raw,
+                                 attn_col = "bio_attn",
+                                 smooth = TRUE,
+                                 wider = FALSE)
+
+data_01000_attnZ <- prepForClass(anno_tbl = anno,
+                                 attn_tbl = attn_01000_raw,
+                                 attn_col = "bio_attn_Z",
+                                 smooth = TRUE,
+                                 wider = FALSE)
+```
+
+We split the data for the first dataset:
+
+```{r}
+data_01000_split <- splitData(data_01000_attnR,
+                              seed = 50,
+                              test_size = 0.20)
+```
+
+We see how the different annotation types are represented in the two sets.
+
+```{r}
+nfeature_train <- data_01000_split$train |>
+  dplyr::select(category, feature_type) |>
+  group_by(category, feature_type) |>
+  count() 
+
+nfeature_test <- data_01000_split$test |>
+  dplyr::select(category, feature_type) |>
+  group_by(category, feature_type) |>
+  count()
+
+nfeature <- left_join(nfeature_train,
+                      nfeature_test,
+                      by = c("category", "feature_type"))
+
+colnames(nfeature) <- c("Category", "Feature Type", "Train", "Test")
+
+kable(nfeature, format = "markdown")
+```
+
+All feature types are represented. We will make a column for the two sets to describe the train/test partition.
+
+```{r}
+train_seq <- data_01000_split$train_seq
+test_seq <- data_01000_split$test_seq
+
+data_01000_attnR <- data_01000_attnR |>
+  mutate(partition = case_when(accession %in% train_seq ~ "train",
+                               accession %in% test_seq ~ "test")) 
+
+data_01000_attnZ <- data_01000_attnZ |>
+  mutate(partition = case_when(accession %in% train_seq ~ "train",
+                               accession %in% test_seq ~ "test"))
+```
+
+I save the results.
+
+```{r}
+write_csv(data_01000_attnR, here("data/subset_01000/esm_processed/attn_R_class.csv"))
+write_csv(data_01000_attnZ, here("data/subset_01000/esm_processed/attn_Z_class.csv"))
+```

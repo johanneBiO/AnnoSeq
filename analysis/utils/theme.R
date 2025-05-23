@@ -1,3 +1,5 @@
+library(ggplot2)
+
 main_theme <- theme_classic() +
   theme(axis.title.x = element_text(face = "bold", vjust = -1),
         axis.title.y = element_text(face = "bold", vjust = 3),

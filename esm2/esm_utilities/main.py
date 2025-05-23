@@ -27,6 +27,8 @@ parser.add_argument("-res", "--res_dir", help = "Result folder.")
 parser.add_argument("-s", "--scr_run", action = "store_true", help = "Run ESM for scrambled sequences.")
 parser.add_argument("-scr", "--scr_dir", help = "Scrambled sequence folder.")
 parser.add_argument("-n", "--norm",  action = "store_true", help = "Extract normalized attention scores.")
+parser.add_argument("-r", "--row",  action = "store_true", help = "Row-summarize the attention scores.")
+parser.add_argument("-q", "--qua",  action = "store_true", help = "Quantiles of the attention scores.")
 parser.add_argument("-bs", "--batch_size", type=int, default=20, help = "Batch size for processing.")
 args = parser.parse_args()
 
@@ -35,14 +37,16 @@ res_dir = args.res_dir
 scr = args.scr_run
 scr_dir = args.scr_dir
 norm_attn = args.norm
+row_attn = args.row
+qua_attn = args.qua
 batch_size = args.batch_size
 
 # Create output directories
 if scr:
-    bio_res_dir = os.path.join(res_dir, "esm_output/biological_seq")
-    scr_res_dir = os.path.join(res_dir, "esm_output/scrambled_seq")
+    bio_res_dir = os.path.join(res_dir, "biological_seq")
+    scr_res_dir = os.path.join(res_dir, "scrambled_seq")
 else:
-    bio_res_dir = os.path.join(res_dir, "esm_output")
+    bio_res_dir = os.path.join(res_dir)
 
 # Use customized ESM-2 model
 sys.path.insert(0, '../esm/')
@@ -61,7 +65,7 @@ dataset = SequenceDataset(sequences, batch_converter)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=lambda b: collate_fn(b, batch_converter))
 
 # Run ESM-2
-get_esm2_output(dataloader, model, alphabet, bio_res_dir, layer_indices, norm_attn)
+get_esm2_output(dataloader, model, alphabet, bio_res_dir, layer_indices, norm_attn, row_attn, qua_attn)
 
 # Aggregate results
 batch_res_dir = os.path.join(bio_res_dir, "batch_results")
@@ -90,7 +94,7 @@ if scr:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=lambda b: collate_fn(b, batch_converter)) 
 
         # Run ESM-2
-        get_esm2_output(dataloader, model, alphabet, res_dir_i, layer_indices, norm_attn)
+        get_esm2_output(dataloader, model, alphabet, res_dir_i, layer_indices, norm_attn, row_attn, qua_attn)
 
         # Aggregate results
         batch_res_dir = os.path.join(res_dir_i, "batch_results")

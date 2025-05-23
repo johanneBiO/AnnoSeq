@@ -1,0 +1,158 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(here)
+library(purrr)
+library(tidyverse)
+library(janitor)
+library(yardstick)
+
+source("utils/theme.R")
+
+res_path <- here("reports/figures")
+```
+
+```{r}
+# Set folder path
+folder_path <- here("randomF/attn_raw_mean_xgboost/predictions/")
+
+# Get all prediction files
+files <- list.files(path = folder_path, 
+                    pattern = "^pred_.*\\.csv$", 
+                    full.names = TRUE)
+
+# Function to calculate metrics
+compute_metrics <- function(file_path) {
+  data <- read_csv(file_path,
+                   show_col_types = FALSE) |>
+    clean_names() |>
+    mutate(true = factor(true,
+                         levels = c(0, 1)),
+           prediction = factor(prediction,
+                               levels = c(0, 1)))
+  
+  # Get model name from file name
+  model_name <- str_remove(basename(file_path), "^pred_") |>
+    str_remove("\\.csv$")
+
+  # Compute metrics
+  metrics <- metric_set(accuracy, precision, recall, f_meas)(data, truth = true, estimate = prediction)
+
+  # Confusion matrix
+  cm <- conf_mat(data, truth = true, estimate = prediction)$table 
+  
+  tp <- cm["1", "1"]
+  fp <- cm["1", "0"]
+  tn <- cm["0", "0"]
+  fn <- cm["0", "1"]
+
+  # Combine everything
+  metrics_wide <- metrics |>
+    pivot_wider(names_from = .metric, values_from = .estimate)
+
+  tibble(model = model_name,
+         TP = tp,
+         FP = fp,
+         TN = tn,
+         FN = fn,
+         P = TP + FN,
+         N = TN + FP,
+         total = P + N,
+         accuracy = P/total*TP/(TP+FN) + N/total*TN/(TN+FP),
+         precision = TP / (TP + FP),
+         recall = TP / (TP + FN),
+         f1 = P/total*2*TP/(2*TP+FP+FN) + N/total*2*TN/(2*TN+FN+FP))
+  }
+
+# Apply to all files
+results <- map_dfr(files, compute_metrics)
+
+# View combined results
+print(results)
+```
+
+```{r}
+initial_data <- read_csv(here("data/subset_01000/esm_processed/attn_raw_mean.csv"),
+                         show_col_types = FALSE) |>
+  select(-starts_with("layer_"))
+
+results <- results |>
+  mutate(across(everything(), ~replace_na(., 0))) |>
+  mutate(feature_type = model)
+
+data_full <- initial_data |>
+  group_by(category, feature_type, partition) |>
+  count() |>
+  pivot_wider(names_from = partition,
+              values_from = n) |>
+  left_join(results, 
+            by = "feature_type")
+
+ref <- data_full |>
+  filter(feature_type == "unannotated") |>
+  select(train) |>
+  pull()
+
+data_full <- data_full |>
+  mutate(ratio = ref/train) |>
+  filter(feature_type != "unannotated") |>
+  select(-model)
+```
+
+```{r}
+data_full <- data_full |>
+  mutate(category = str_replace_all(as.character(category), "_", " "),
+         feature_type = str_replace_all(as.character(feature_type), "_", " ")) |>
+  group_by(category, feature_type) |>
+  mutate(feature_type = str_to_title(feature_type),
+         category = str_to_title(category),
+         category = case_when(category == "Amino Acid Modification" ~ "AAM",
+                              category == "Molecule Processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category))
+```
+
+```{r}
+data_full |>
+  mutate(feature_type = if_else(ratio > 5, paste0("* ", feature_type), as.character(feature_type))) |>
+  pivot_longer(cols = accuracy:f1,
+               names_to = "metric",
+               values_to = "value") |>
+  mutate(metric = str_to_title(metric)) |>
+  filter(metric != "Accuracy",
+         metric != "F1") |>
+  ggplot(mapping = aes(x = feature_type,
+                       y = value)) +
+    geom_bar(stat = "identity",
+             fill = "#1f618d") +
+    labs(x = "",
+         y = "") + 
+    #scale_fill_manual(values = c("#990000", "#1f618d")) +
+    #scale_color_manual(values = c("#990000", "#1f618d")) +
+    facet_grid(cols = vars(category),
+               rows = vars(metric),
+               scales = "free_x",
+               space = "free_x") +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 50, 
+                                     hjust = 1),
+          strip.background = element_rect(fill="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          axis.ticks.x = element_blank(),
+          plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
+          panel.spacing = unit(0.4, "lines"),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank())
+
+ggsave(filename = file.path(res_path, "rf_res_raw_25_iter.png"), width = 9, height = 6, dpi = 300)
+```

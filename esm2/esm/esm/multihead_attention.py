@@ -410,8 +410,11 @@ class MultiheadAttention(nn.Module):
 
             if not need_head_weights:
                 # average attention weights over heads
-                attn_weights = attn_weights.mean(dim=0)  
-                attn_weights_raw = attn_weights_raw.mean(dim=0)
+                #attn_weights = attn_weights.mean(dim=0)  
+                #attn_weights_raw = attn_weights_raw.mean(dim=0)
+
+                attn_weights = torch.quantile(attn_weights, 0.9, dim=0)
+                attn_weights_raw = torch.quantile(attn_weights_raw, 0.9, dim=0)
         #######################################################
 
         return attn, attn_weights, attn_weights_raw

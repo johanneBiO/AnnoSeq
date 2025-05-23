@@ -11,6 +11,7 @@ library(here)
 library(tidyr)
 library(dplyr)
 library(scales)
+library(purrr)
 
 source("utils/theme.R")
 ```
@@ -42,7 +43,7 @@ anno_filter3 <- anno_filter3 |>
 
 ## Excluded annotations
 
-Let's look at the number of annotations types being exluded.
+Let's look at the number of annotations types being excluded.
 
 ```{r}
 anno_numbers <- anno_filter3 |>
@@ -122,15 +123,7 @@ ggsave(filename = file.path(res_path, "included_anno.png"), width = 9, height = 
 
 ## Annotation frequency
 
-I take a look at the frequency of the different annotations across the complete set and the subsets. Let's join the sets with a column marking the dataset type.
-
-```{r}
-data_path <- here("data/complete/annotations")
-res_path <- here("reports/figures")
-
-acc_00100 <- read.table(file = here("data/subset_00100/additional/accessions.txt"))
-acc_01000 <- read.table(file = here("data/subset_00100/additional/accessions.txt"))
-```
+I take a look at the frequency of the different annotations across the complete set.
 
 ```{r}
 anno |>
@@ -144,10 +137,6 @@ anno |>
          category = factor(category)) |>
   ggplot(mapping = aes(x = feature_type)) +
   geom_bar(fill = "#1f618d") +
-  #geom_text(mapping = aes(y = yfreq,
-                          #label = pfreq,
-                          #color = included),
-            #size = 2.5) + 
   labs(x = "Feature type",
        y = "Frequency") + 
   facet_grid(cols = vars(category),
@@ -167,5 +156,5 @@ anno |>
         plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
         panel.spacing = unit(0.4, "lines"))
 
-#ggsave(filename = file.path(res_path, "included_anno.png"), width = 9, height = 5, dpi = 300)
+ggsave(filename = file.path(res_path, "freq_anno.png"), width = 9, height = 5, dpi = 300)
 ```

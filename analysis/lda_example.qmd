@@ -1,0 +1,107 @@
+---
+title: "LDA"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(here)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(MASS)
+library(caret)
+
+source("utils/theme.R")
+source("utils/smoothing.R")
+source("utils/classification.R")
+```
+
+This document demonstrates why it is reasonable to use the raw attention scores for predicting biological relevant regions within a sequence. Random Forests are robust, and they will most likely work with raw or normalized data. However, Quadratic Discriminant Analysis (QDA) can give use a fast idea about how well the raw vs. normalized attention scores separate the annotated and unannotated classes before commiting time to costly model tuning.
+
+## Data Import
+
+I load the attention for the 100 sequences and combine them with the annotations to prepare for a classification task.
+
+```{r}
+# Data paths
+data_path <- here("data/complete/annotations")
+res_path <- here("reports/figures")
+
+# Attention scores 
+attn_00100_raw <- readRDS(file = file.path(here("data/subset_00100/esm_processed/attn_raw.rds")))
+attn_00100_norm <- readRDS(file = file.path(here("data/subset_00100/esm_processed/attn_norm.rds")))
+
+# Load the annotations
+anno <- readRDS(file = file.path(here("data/complete/annotations/processed/anno.rds")))
+
+# Select relevant columns
+attn_00100_raw <- attn_00100_raw |>
+  dplyr::select(accession, layer, position, bio_attn, bio_attn_Z)
+
+attn_00100_norm <- attn_00100_norm |>
+  dplyr::select(accession, layer, position, bio_attn, bio_attn_Z)
+
+# Combine with annotations and alter the data format
+data_00100_raw <- prepForClass(anno_tbl = anno,
+                               attn_tbl = attn_00100_raw,
+                               attn_col = "bio_attn",
+                               smooth = FALSE,
+                               wider = FALSE) |>
+  mutate(feature_type = case_when(feature_type != "unannotated" ~ "annotated",
+                                  .default = feature_type),
+         feature_type = factor(feature_type)) |>
+  dplyr::select(-category)
+
+data_00100_norm <- prepForClass(anno_tbl = anno,
+                                attn_tbl = attn_00100_norm,
+                                attn_col = "bio_attn",
+                                smooth = FALSE,
+                                wider = FALSE) |>
+  mutate(feature_type = case_when(feature_type != "unannotated" ~ "annotated",
+                                  .default = feature_type),
+         feature_type = factor(feature_type)) |>
+  dplyr::select(-category)
+```
+
+In the above, I have altered the data such that we only distinguish between annotated and unannotated positions. I now split the data into a training and a test set for the raw attention scores..
+
+```{r}
+data_00100_raw_split <- splitData(data_00100_raw)
+```
+Let's run the QDA.
+
+```{r}
+qda_model_raw <- qda(feature_type ~ ., data = data_00100_raw_split$train)
+pred_raw <- predict(qda_model_raw, newdata = data_00100_raw_split$test)
+
+confusionMatrix(pred_raw$class, data_00100_raw_split$test$feature_type)
+```
+
+I do the same analysis for the normalized scores. I will apply the same split.
+
+```{r}
+data_00100_norm_split <- splitData(data_00100_norm, test_seq = data_00100_raw_split$test_seq)
+
+qda_model_norm <- qda(feature_type ~ ., data = data_00100_norm_split$train)
+pred_norm <- predict(qda_model_norm, newdata = data_00100_norm_split$test)
+
+confusionMatrix(pred_norm$class, data_00100_norm_split$test$feature_type)
+```
+
+In the above, the accuracy becomes really low. However, the QDA will also assume normality when it comes to the distribution of the predictor values. A log transformation will make the data more "normal-like". We will try this out and fit the model once more.
+
+```{r}
+data_00100_norm_log <- data_00100_norm |>
+  mutate(across(starts_with("layer_"), log))
+  
+data_00100_norm_log_split <- splitData(data_00100_norm_log, test_seq = data_00100_raw_split$test_seq)
+
+qda_model_norm_log <- qda(feature_type ~ ., data = data_00100_norm_log_split$train)
+pred_norm_log <- predict(qda_model_norm_log, newdata = data_00100_norm_log_split$test)
+
+confusionMatrix(pred_norm_log$class, data_00100_norm_log_split$test$feature_type)
+```

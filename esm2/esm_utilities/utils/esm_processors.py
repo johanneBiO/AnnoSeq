@@ -102,7 +102,7 @@ def collate_fn(batch, batch_converter):
     batch_labels, batch_strs, batch_tokens = batch_converter(batch)
     return batch_labels, batch_strs, batch_tokens
 
-def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = False):
+def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = False, row = True, qua = False):
     """
     Compute ESM-2 embeddings and attention scores for sequences using batching.
 
@@ -124,6 +124,15 @@ def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = 
     batch_res_dir = os.path.join(res_dir, "batch_results")
     os.makedirs(batch_res_dir, exist_ok=True)
 
+    # Define the method for summarizing results (row-wise or column-wise)
+    if row:
+        sum_dim = 0
+    else:
+        sum_dim = 1
+
+    # Set quantiles
+    quantiles = 0.9 #torch.tensor([0, 0.25, 0.5, 0.75, 1]) 
+        
     # Run ESM-2
     for batch_idx, (batch_labels, batch_strs, batch_tokens) in enumerate(dataloader):
         
@@ -159,10 +168,18 @@ def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = 
             for i, tokens_len in enumerate(batch_lens):
                 batch_token = batch_tokens[i]
                 if batch_token[0] == alphabet.cls_idx and (batch_token[-1] == alphabet.eos_idx or batch_token[-1] == alphabet.padding_idx):
-                    batch_attention_raw[j].append(token_attention_raw[i, 1:tokens_len - 1, 1:tokens_len - 1].mean(dim=1).cpu().numpy().tolist())
+                    batch_attention = token_attention_raw[i, 1:tokens_len - 1, 1:tokens_len - 1].cpu()
                 else: 
-                    batch_attention_raw[j].append(token_attention_raw[i, :, :].mean(dim=1).cpu().numpy().tolist())
-        
+                    batch_attention = token_attention_raw[i, :, :].cpu()
+                
+                # Summarize the attention signal
+                if qua:
+                    attention_features = torch.quantile(batch_attention, quantiles, dim=sum_dim).numpy().tolist()
+                else:
+                    attention_features = batch_attention.mean(dim=sum_dim).numpy().tolist()
+                
+                batch_attention_raw[j].append(attention_features)
+                
         # Save attention scores for the current batch
         batch_attention_raw_file = os.path.join(batch_res_dir, f"batch_{batch_idx+1}_attn_raw.json")
         with open(batch_attention_raw_file, "w") as outfile:
@@ -178,12 +195,19 @@ def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = 
                 for i, tokens_len in enumerate(batch_lens):
                     batch_token = batch_tokens[i]
                     if batch_token[0] == alphabet.cls_idx and (batch_token[-1] == alphabet.eos_idx or batch_token[-1] == alphabet.padding_idx):
-                        batch_attention_norm[j].append(token_attention_norm[i, 1:tokens_len - 1, 1:tokens_len - 1].mean(dim=1).cpu().numpy().tolist())
+                        batch_attention = token_attention_norm[i, 1:tokens_len - 1, 1:tokens_len - 1].cpu()
                     else: 
-                        batch_attention_norm[j].append(token_attention_norm[i, :, :].mean(dim=1).cpu().numpy().tolist())
+                        batch_attention = token_attention_norm[i, :, :].cpu()
+                    
+                    # Summarize the attention signal
+                    if qua:
+                        attention_features = torch.quantile(batch_attention, quantiles, dim=sum_dim).numpy().tolist()
+                    else:
+                        attention_features = batch_attention.mean(dim=sum_dim).numpy().tolist()
+
+                    batch_attention_norm[j].append(attention_features)
         
             batch_attention_norm_file = os.path.join(batch_res_dir, f"batch_{batch_idx+1}_attn_norm.json")
-            
             with open(batch_attention_norm_file, "w") as outfile:
                 ujson.dump(batch_attention_norm, outfile)
             
@@ -191,7 +215,7 @@ def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = 
             del token_attention_norm, batch_attention_norm
             
         # Clean up and release memory
-        del batch_tokens, results, token_representations, batch_embeddings, token_attention_raw, batch_attention_raw
+        del batch_tokens, results, token_representations, batch_embeddings, token_attention_raw, batch_attention, batch_attention_raw, attention_features
         gc.collect()
         torch.cuda.empty_cache()
 

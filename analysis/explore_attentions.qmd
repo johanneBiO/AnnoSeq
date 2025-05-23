@@ -8,32 +8,123 @@ editor: visual
 rm(list = ls())
 
 library(tidyr)
-library(dplyr)
-library(ggplot2)
+library(purrr)
 library(patchwork)
 library(IRanges)
 
-res_path <- "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/figures/"
+source("utils/smoothing.R")
+source("utils/theme.R")
 ```
 
-I have ran the ESM-2 model for 100 sequences and extracted the raw and normalized attention scores for each self-attention layer. To compare the biological signal with a baseline, we also ran the model for 5 scramble sequences per biological sequence. The attention scores have been aggregated into vectors by taken the row mean or 90% quantile to obtain an attention score per position. For the scrambled sequences, we afterwards summarize the results by computing the mean, standard deviation, minimum and maximum attention per position across the 5 sequences.
+In this script, I will explore the behavior of the attention scores from the ESM-2 model.
 
-Let's read the data.
+## Why use raw attention scores?
+
+I ran the ESM-2 model for 100 sequences and extracted the raw and normalized attention scores for each self-attention layer. I extract the raw attention scores, because we would otherwise force unannotated positions to have the same degree of signal as the annotated positions when applying the softmax. The heads within each layer was summarized by two methods: 1) by taken the average across heads and 2) computing the 90th quantile across heads. To compare the biological signal with a baseline, I also ran the model for 5 scramble sequences per biological sequence. The attention scores have been aggregated into vectors by taken the col mean to obtain an attention score per position. For the scrambled sequences, I summarize the results by computing the mean, standard deviation, minimum and maximum attention per position across the 5 sequences. Let's read in the data as well as the annotations. Besides normalizing from scrambled sequences, I will also apply a min-max normalization function.
 
 ```{r}
-data_path <- "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/100_small/preprocessed/"
+res_path <- here("reports/figures")
 
-attn_raw_mean  <- readRDS(paste(data_path, "attn_all_layers_raw_mean.rds", sep = ""))
-attn_raw_q90   <- readRDS(paste(data_path, "attn_all_layers_raw_q90.rds", sep = ""))
-attn_norm_mean <- readRDS(paste(data_path, "attn_all_layers_norm_mean.rds", sep = ""))
-attn_norm_q90  <- readRDS(paste(data_path, "attn_all_layers_norm_q90.rds", sep = ""))
+anno <- readRDS(file = file.path(here("data/complete/annotations/processed/anno.rds")))
+
+# Expand annotations
+anno_expanded <- anno |>
+  rowwise() |>
+  mutate(position = list(seq(start_position, end_position))) |>
+  unnest(position) |>
+  select(accession, position, category, feature_type)
+
+# Define the min-max normalization function
+minMaxNormalize <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+# A helper function to load and process a single file
+process_attn_file <- function(path, head_sum, attn_type) {
+  readRDS(path) %>%
+    mutate(head_sum = head_sum,
+           attn_type = attn_type) |>
+    select(accession, layer, position, bio_attn, bio_attn_Z, head_sum, attn_type) |>
+    left_join(anno_expanded,
+            by = c("accession", "position"),
+            relationship = "many-to-many") |>
+    mutate(across(c(category, feature_type), ~ ifelse(is.na(.), "unannotated", .)))
+}
+
+# Define all files and their metadata
+files_info <- tribble(
+  ~path, ~head_sum, ~attn_type,
+  here("data/subset_00100/esm_processed/attn_raw_head_mean.rds"), "mean",   "raw",
+  here("data/subset_00100/esm_processed/attn_raw_head_quan90.rds"), "quan90", "raw",
+)
+
+# Process and combine all into one data frame
+all_attn <- pmap_dfr(files_info, process_attn_file)
 ```
 
-The format can be seen from below.
+For now, we do not consider the annotation type. We will just distinguish between annotated vs. unannotated positions. 
 
 ```{r}
-sample_n(attn_raw_mean, size = 10)
+all_attn <- all_attn |>
+  mutate(annotated = case_when(feature_type == "unannotated" ~ "No",
+                               .default = "Yes")) |>
+  distinct()
 ```
+
+We look at the distribution of the attention for unannotated and annotated positions.
+
+```{r}
+all_attn  |>
+  #group_by(layer, head_sum, attn_type, annotated) |>
+  #summarise(med = median(bio_attn)) |>
+  ungroup() |>
+  ggplot(mapping = aes(y = bio_attn_Z,
+                       x = annotated,
+                       color = annotated)) +
+  geom_violin(alpha = 0.6, fill ="#1f618d") +
+  geom_boxplot(width = 0.2) +
+  #geom_line() + 
+  main_theme +
+  labs(y = "Attention Score") +
+  facet_grid(rows = vars(attn_type),
+             cols = vars(head_sum),
+             scales = "free")
+  #geom_violin(alpha = 0.6, width = 10) + 
+  #geom_boxplot(width = 0.2)
+            #´    fill = "grey80",
+            #   outlier.shape = 1,
+            #   outlier.color = scales::alpha("black", 0.4))
+
+#ggsave(filename = file.path(res_path, "dist.png"), width = 4, height = 4, dpi = 300)
+```
+
+```{r}
+data <- all_attn  |>
+  select(-bio_attn, -bio_attn_minMax) |>
+  pivot_wider(names_from = layer,
+              names_prefix = "layer",
+              values_from = bio_attn_Z) |>
+  filter(head_sum == "quan90", attn_type == "raw")
+
+# Select only numeric columns
+numeric_data <- data |>
+  select(where(is.numeric)) |>
+  select(-position)
+
+# Run PCA
+pca_result <- prcomp(numeric_data, center = TRUE, scale. = TRUE)
+
+
+df_pca <- bind_cols(
+  data |> select(feature_type),
+  as_tibble(pca_result$x)
+)
+
+ggplot(df_pca, aes(x = PC1, y = PC4, color = feature_type)) +
+  geom_point()
+```
+
+
 
 ## Distribution of Attention Weights
 
@@ -110,56 +201,10 @@ plotDistBioZ(attn_raw_q90, "Attention: Raw, Aggregation: Q90")
 
 We want to look at the attention for each feature type across the different layers. I load the annotations also denoted as features.
 
-```{r}
-accessions <- read.table(file = "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/100_small/additional/UP000005640_9606_sp_100_acc.txt") |>
-  dplyr::rename(accession = "V1") |>
-  select(accession) |>
-  pull()
 
-features <- readRDS(file = "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/20000_large/annotations/features_sp_filtered.rds")
-
-features <- features |>
-  filter(accession %in% unlist(accessions)) |>
-  mutate(across(c(category, feature_type), ~ ifelse(is.na(.), "Unannotated", .)),
-         across(c(category, feature_type), ~ str_replace(., "^(.)", toupper)))
-
-features_expand <- features |>
-  rowwise() |>
-  mutate(position = list(seq(start_position, end_position))) |>
-  unnest(position) |>
-  select(accession, position, category, feature_type, description)
-```
-
-We get the sequence length. As not all sequences have annotated positions, we can not achieve the information from the feature table.
-
-```{r}
-seq_length <- attn_raw_mean |>
-  group_by(accession) |>
-  summarise(length = max(position))
-```
 
 We join the annotations and lengths with the preprocessed attention weights.
 
-```{r}
-addFeatures <- function(attn){
-  attn_expand <- left_join(attn,
-                           seq_length,
-                           by = "accession",
-                           relationship = "many-to-one")
-  attn_expand <- left_join(attn_expand,
-                           features_expand,
-                           by = c("accession", "position"),
-                           relationship = "many-to-many") |>
-    mutate(across(c(category, feature_type), ~ ifelse(is.na(.), "Unannotated", .)),
-           across(c(category, feature_type), ~ str_replace(., "^(.)", toupper)))
-  return(attn_expand)
-}
-
-attn_raw_mean  <- addFeatures(attn_raw_mean)
-attn_raw_q90   <- addFeatures(attn_raw_q90)
-attn_norm_mean <- addFeatures(attn_norm_mean)
-attn_norm_q90  <- addFeatures(attn_norm_q90)
-```
 
 In general, the attention signal is highly noisy. Thus, we must apply smoothing to be able to make sense of it.
 
@@ -393,16 +438,19 @@ plotExample <- function(data_attn, data_feature, acc, L){
   # Get the attention signal and apply smoothing.
   attn <- data_attn |>
     filter(accession == acc) |>
-           #layer == L) |>
-    mutate(W = nearestUneven(length/10),
-           S = W/6) |>
+    mutate(W = 7,#nearestUneven(length/10),
+           S = 1) |> #W/6) |>
     group_by(accession, layer) |>
     mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z, 
                                                 window = unique(W), 
-                                                sigma = unique(S))) |>
-    ungroup() #|>
-    #group_by(accession, position) |>
-    #mutate(bio_attn_Z_smooted = sum(abs(bio_attn_Z_smooted)))
+                                                sigma = unique(S)),
+           bio_attn_smooted = smoothAttention(bio_attn_minMax, 
+                                              window = unique(W), 
+                                              sigma = unique(S))) |>
+    ungroup() |>
+    mutate(layer_group = case_when(layer < 12 ~ "Layer 1:11",
+                                   layer > 22 ~ "Layer 23:33",
+                                   .default = "Layer 12:22"))
   
   # Define the length of the sequence.
   seq_length <- max(attn$position)
@@ -467,6 +515,7 @@ plotExample <- function(data_attn, data_feature, acc, L){
     scale_x_continuous(breaks = c(1, seq(50, seq_length-30, by = 50), seq_length),
                        limits = c(1, seq_length),
                        expand = expansion(mult = c(0.04, 0.04))) + 
+    #facet_grid(rows = vars(layer_group), scales = "free") +
     labs(x = "", 
          y = "Attention Score",
          color = "Layer",
@@ -482,6 +531,16 @@ plotExample <- function(data_attn, data_feature, acc, L){
 We sample an example
 
 ```{r}
+attn_ <- readRDS(here("data/subset_00100/esm_processed/attn_raw_head_mean.rds")) |>
+  group_by(accession, layer) %>%
+    mutate(bio_attn_minMax = minMaxNormalize(bio_attn)) %>%
+    ungroup()
+
+accessions <- unique(attn_$accession)
+```
+
+
+```{r}
 ex <- sample(accessions, size = 1)
 print(ex)
 ```
@@ -489,344 +548,18 @@ print(ex)
 Let's visualize this sequence.
 
 ```{r}
-plotExample(attn_raw_mean, features, ex, 33)
-```
-
-## Capturing Sites and Regions
-
-We wish to see how large a proportion of sites and regions we can capture when extracting regions with a high attention signal across layers. First, we will just consider each position as an observation in itself.
-
-```{r}
-plotCapPos <- function(attn, threshold){
-  p_cap_pos <- attn |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type)),
-           W = nearestUneven(length/10),
-           S = W/6) |>
-    group_by(accession, layer) |>
-    mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z,
-                                                window = unique(W),
-                                                sigma = unique(S))) |>
-    ungroup() |>
-    mutate(high = case_when(bio_attn_Z_smooted > threshold ~ 1,
-                            .default = 0)) |>
-    group_by(layer, feature_type) |>
-    summarise(detected = sum(high),
-              total = n()) |>
-    ungroup() |>
-    mutate(proportion = detected/total) |>
-    ggplot(mapping = aes(x = layer,
-                         y = feature_type,
-                         fill = proportion)) +
-    geom_tile(color = "black") +
-    scale_fill_gradient2(low = "#1f618d", mid = "white", high = "#990000", midpoint = 0.5) + 
-    scale_x_continuous(breaks = seq(1, 33, by = 2),
-                       expand = c(0, 0)) +
-    scale_y_discrete(expand = c(0, 0)) +
-    labs(x = "Layer",
-         y = "Feature Type",
-         fill = "Proportion") +
-    theme_classic() + 
-    theme(legend.position = "bottom")
-  
-  p_cap_freq <- attn |>
-    filter(layer == 1) |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type))) |>
-    group_by(feature_type) |>
-    summarise(total = n()) |>
-    ggplot(mapping = aes(x = total,
-                         y = feature_type)) +
-    geom_bar(stat = "identity",
-             fill = "black") +
-    geom_text(mapping = aes(label = total),
-              hjust = -0.15,
-              size = 2.5) +
-    scale_x_continuous(limits = c(0, 25000)) +
-    scale_y_discrete(expand = c(0, 0)) + 
-    theme_void()
-  
-  p_combined <- p_cap_pos + p_cap_freq
-  
-  return(p_combined)
-}
-```
-
-In the plot below, a position is consider biological relevant, if the Z score is above 2. That is, the Z score is above 2 standard deviations.
-
-```{r}
-plotCapPos(attn_raw_mean, 2)
-
-ggsave(filename = paste(res_path, "cap_pos_mean_2sd.png", sep = ""), 
-       width = 8, 
-       height = 5)
-```
-
-We consider a higher threshold.
-
-```{r}
-plotCapPos(attn_raw_mean, 3)
-
-ggsave(filename = paste(res_path, "cap_pos_mean_3sd.png", sep = ""), 
-       width = 8, 
-       height = 5)
-```
-
-```{r}
-plotCapPos(attn_raw_q90, 3)
-
-ggsave(filename = paste(res_path, "cap_pos_q90_3sd.png", sep = ""), 
-       width = 8, 
-       height = 5)
-```
-
-```{r}
-plotCapPos(attn_raw_q90, 4)
-
-ggsave(filename = paste(res_path, "cap_pos_q90_4sd.png", sep = ""), 
-       width = 8, 
-       height = 5)
-```
-
-Let's try to combine layers.
-
-```{r}
-plotCapPosComLay <- function(attn, threshold){
-  p_cap_pos <- attn |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type)),
-           W = nearestUneven(length/10),
-           S = W/6,
-           layer_group = case_when(layer %in% c(1,2,3) ~ 1,
-                                   layer %in% c(4,5,6) ~ 2,
-                                   layer %in% c(7,8,9) ~ 3,
-                                   layer %in% c(10,11,12) ~ 4,
-                                   layer %in% c(13,14,15) ~ 5,
-                                   layer %in% c(16,17,18) ~ 6,
-                                   layer %in% c(19,20,21) ~ 7,
-                                   layer %in% c(22,23,24) ~ 8,
-                                   layer %in% c(25,26,27) ~ 9,
-                                   layer %in% c(28,29,30) ~ 10,
-                                   layer %in% c(31,32,33) ~ 11)) |>
-    group_by(accession, layer) |>
-    mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z,
-                                                window = unique(W),
-                                                sigma = unique(S))) |>
-    ungroup() |>
-    group_by(accession, position, layer_group) |>
-    mutate(high = case_when(any(bio_attn_Z_smooted > threshold) ~ 1,
-                            .default = 0)) |>
-    group_by(layer_group, feature_type) |>
-    summarise(detected = sum(high),
-              total = n()) |>
-    mutate(proportion = detected/total) |>
-    ggplot(mapping = aes(x = layer_group,
-                         y = feature_type,
-                         fill = proportion)) +
-    geom_tile(color = "black") +
-    scale_fill_gradient2(low = "#1f618d", mid = "white", high = "#990000", midpoint = 0.5) + 
-    scale_x_continuous(breaks = seq(1, 33, by = 2),
-                       expand = c(0, 0)) +
-    scale_y_discrete(expand = c(0, 0)) +
-    labs(x = "Layer",
-         y = "Feature Type",
-         fill = "Proportion") +
-    theme_classic() + 
-    theme(legend.position = "bottom")
-  
-  p_cap_freq <- attn |>
-    filter(layer == 1) |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type))) |>
-    group_by(feature_type) |>
-    summarise(total = n()) |>
-    ggplot(mapping = aes(x = total,
-                         y = feature_type)) +
-    geom_bar(stat = "identity",
-             fill = "black") +
-    geom_text(mapping = aes(label = total),
-              hjust = -0.15,
-              size = 2.5) +
-    scale_x_continuous(limits = c(0, 25000)) +
-    scale_y_discrete(expand = c(0, 0)) + 
-    theme_void()
-  
-  p_combined <- p_cap_pos + p_cap_freq
-  
-  return(p_combined)
-}
-```
-
-```{r}
-plotCapPosComLay(attn_raw_mean, 3)
-
-ggsave(filename = paste(res_path, "cap_pos_com_mean_3sd.png", sep = ""), 
-       width = 8, 
-       height = 5)
-```
-
-```{r}
-plotCapPosComLay(attn_raw_mean, 4)
-
-ggsave(filename = paste(res_path, "cap_pos_com_mean_4sd.png", sep = ""), 
-       width = 8, 
-       height = 5)
-```
-
-```{r}
-attn_raw_mean |>
-  filter(layer %in% c(10:18, 28:33)) |>
-  arrange(category, feature_type) |>
-  mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type)),
-          W = nearestUneven(length/10),
-          S = W/6) |>
-  group_by(accession, layer) |>
-  mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z,
-                                              window = unique(W),
-                                              sigma = unique(S))) |>
-  ungroup() |>
-  group_by(accession, position) |>
-  mutate(high = case_when(sum(bio_attn_Z_smooted) > 50 ~ 1,
-                          .default = 0)) |>
-  group_by(feature_type) |>
-  summarise(detected = sum(high),
-            total = n()) |>
-  mutate(proportion = detected/total) |>
-  ggplot(mapping = aes(x = feature_type,
-                       y = proportion)) +
-  geom_bar(stat = "identity",
-           fill = "#1f618d") + 
-  labs(x = "Annotation Type",
-       y = "Proportion of captured positions") +
-  theme_classic() + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-## 
-
-```{r}
-region_extract <- attn_raw_mean |>
-  arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type)),
-           W = nearestUneven(length/10),
-           S = W/6) |>
-    group_by(accession, layer) |>
-    mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z,
-                                                window = unique(W),
-                                                sigma = unique(S))) |>
-    ungroup() |>
-    mutate(high = case_when(bio_attn_Z_smooted > 3 ~ 1,
-                            .default = 0)) |>
-  filter(high == 1)
-```
-
-```{r}
-res <- c()
-
-for (lay in 1:33){
-  
-  print(lay)
-  
-  anno_coverage <- list()
-  
-  for (acc in accessions){
-    
-    anno_data <- features |>
-      filter(accession == acc)
-    
-    attn_data <- region_extract |>
-      filter(accession == acc,
-             layer == lay)
-    
-    # Get true annotation intervals (reduce to merge overlapping regions).
-    true_ranges <- IRanges(start = anno_data$start_position,
-                             end = anno_data$end_position)
-    
-    # Make the extracted attention positions into intervals.
-    region_ranges <- IRanges(attn_data$position)
-    
-    # Find overlaps between annotated and attention regions.
-    overlaps <- findOverlaps(true_ranges, region_ranges)
-    
-    # Define overlapping intervals.
-    overlaps_intervals <- pintersect(true_ranges[queryHits(overlaps)],
-                                     region_ranges[subjectHits(overlaps)])
-    
-    # Split ranges by the original true_ranges index
-    split_overlaps <- split(overlaps_intervals , queryHits(overlaps))
-
-    # Reduce each group to merge overlapping positions.
-    reduced <- reduce(split_overlaps)
-
-    # Sum the width of reduced overlaps.
-    coverage <- numeric(length(true_ranges))
-    coverage[as.integer(names(reduced))] <- sum(width(reduced))
-
-    # Normalize by true range widths
-    true_width <- width(true_ranges)
-    coverage <- coverage / true_width
-    
-    # Save the results together with the sequence.
-    result <- anno_data |>
-      select(accession, category, feature_type) |>
-      mutate(layer = lay,
-             coverage = coverage)
-    
-    anno_coverage[[acc]] <- result
-  }
-  
-  res <- rbind(res, bind_rows(anno_coverage))
-}
-
-
+plotExample(attn_, anno, ex, 33)
 
 ```
 
-```{r}
-res |>
-  arrange(category, feature_type) |>
-  mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type)),
-         detected = case_when(coverage > 0.5 ~ 1,
-                              .default = 0)) |>
-  group_by(layer, feature_type) |>
-  summarise(detected = sum(detected),
-            total = n()) |>
-  mutate(proportion = detected/total) |>
-  ggplot(mapping = aes(x = layer,
-                         y = feature_type,
-                         fill = proportion)) +
-    geom_tile(color = "black") +
-    scale_fill_gradient2(low = "#1f618d", mid = "white", high = "#990000", midpoint = 0.5) + 
-    scale_x_continuous(breaks = seq(1, 33, by = 2),
-                       expand = c(0, 0)) +
-    scale_y_discrete(expand = c(0, 0)) +
-    labs(x = "Layer",
-         y = "Feature Type",
-         fill = "Proportion") +
-    theme_classic() + 
-    theme(legend.position = "bottom") +
-  res |>
-    filter(layer == 1) |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type))) |>
-    group_by(feature_type) |>
-    summarise(total = n()) |>
-    ggplot(mapping = aes(x = total,
-                         y = feature_type)) +
-    geom_bar(stat = "identity",
-             fill = "black") +
-    geom_text(mapping = aes(label = total),
-              hjust = -0.15,
-              size = 2.5) +
-    #scale_x_continuous(limits = c(0, 25000)) +
-    scale_y_discrete(expand = c(0, 0)) + 
-    theme_void()
-```
+
+
+
+
+
+
+
+
+
+
+
