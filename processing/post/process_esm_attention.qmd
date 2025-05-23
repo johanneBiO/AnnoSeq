@@ -12,12 +12,12 @@ library(tidyr)
 library(dplyr)
 library(jsonlite)
 
-source("utils/esm_processors.R")
+source("../utils/esm_processors.R")
 ```
 
 ## Set up
 
-I define the pipeline to read in the ESM-2 attention scores using functions from esm_processors.R.
+I define the pipeline to read in the ESM-2 attention scores using functions from esm_processors.R. This method will only be used for the small dataset.
 
 ```{r}
 preprocesAttnLayer <- function(esm_output_path, accessions, layers, method_attn, scr_include = TRUE){
@@ -107,7 +107,7 @@ preprocesAttnLayer <- function(esm_output_path, accessions, layers, method_attn,
 
 ## Process attention scores across datasets
 
-The available information between the complete dataset and the subsets vary. First, I read the ESM-2 results for the small subset with 100 sequences. Here, I wish to save the results from both the raw attention scores and the normalized scores after applying the softmax function. Furthermore, this dataset has scrambled sequences, which we use for normalization of the attention signal. 
+First, I read the ESM-2 results for the small subset with 100 sequences. Here, I wish to save the results from both the raw attention scores before applying the softmax function. Furthermore, this dataset has scrambled sequences, which we use for normalization of the attention signal. I will also distinguish between summarizing the attention per layer by taken the average across heads vs. the 90th quantile of the 20 heads (corresponding to the second largest value).
 
 ```{r}
 # Define layer range.
@@ -122,63 +122,33 @@ acc_00100 <- read.table(file = file.path(data_path_00100, "additional/accessions
   as.list()
 
 # Process ESM-2 attention scores.
-attn_raw_00100 <- preprocesAttnLayer(file.path(data_path_00100, "esm_output/"), 
-                                     acc_00100,
-                                     layers,
-                                     method_attn = "raw",
-                                     scr_include = TRUE)
+attn_raw_headMean_colMean <- preprocesAttnLayer(file.path(data_path_00100, "esm_output_headMean_colMean/"),
+                                                acc_00100,
+                                                layers,
+                                                method_attn = "raw",
+                                                scr_include = TRUE)
 
-attn_norm_00100 <- preprocesAttnLayer(file.path(data_path_00100, "esm_output/"),
-                                      acc_00100,
-                                      layers,
-                                      method_attn = "norm",
-                                      scr_include = TRUE)
+attn_raw_headMean_colQuan90 <- preprocesAttnLayer(file.path(data_path_00100, "esm_output_headMean_colQuan90/"),
+                                                  acc_00100,
+                                                  layers,
+                                                  method_attn = "raw",
+                                                  scr_include = TRUE)
 
-# Save the results.
-saveRDS(attn_raw_00100, file = file.path(data_path_00100, "esm_processed/attn_raw.rds"))
-saveRDS(attn_norm_00100, file = file.path(data_path_00100, "esm_processed/attn_norm.rds"))
-```
+attn_raw_headQuan90_colMean <- preprocesAttnLayer(file.path(data_path_00100, "esm_output_headQuan90_colMean/"),
+                                                  acc_00100,
+                                                  layers,
+                                                  method_attn = "raw",
+                                                  scr_include = TRUE)
 
-For the subset with 1000 sequences, we only got the raw attention scores including scrambled sequences to process. 
-
-```{r}
-# Data path
-data_path_01000 <- here("data/subset_01000")
-
-# Read the accessions.
-acc_01000 <- read.table(file = file.path(data_path_01000, "additional/accessions.txt")) |>
-  pull() |>
-  as.list()
-
-# Process ESM-2 attention scores.
-attn_raw_01000 <- preprocesAttnLayer(file.path(data_path_01000, "esm_output/"), 
-                                     acc_01000,
-                                     layers,
-                                     method_attn = "raw",
-                                     scr_include = TRUE)
+attn_raw_headQuan90_colQuan90 <- preprocesAttnLayer(file.path(data_path_00100, "esm_output_headQuan90_colQuan90/"),
+                                                    acc_00100,
+                                                    layers,
+                                                    method_attn = "raw",
+                                                    scr_include = TRUE)
 
 # Save the results.
-saveRDS(attn_raw_00100, file = file.path(data_path_01000, "esm_processed/attn_raw.rds"))
-```
-
-Finally, we process the raw attention scores from the complete dataset of ~ 20.000 sequences. I did not scramble the sequences for the full set, and I will only extracted the raw attention scores.
-
-```{r}
-# Data path
-data_path_complete <- here("data/complete")
-
-# Read the accessions.
-acc_complete <- read.table(file = file.path(data_path_complete, "additional/accessions_sp_cropped.txt")) |>
-  pull() |>
-  as.list()
-
-# Process ESM-2 attention scores.
-attn_raw_complete <- preprocesAttnLayer(file.path(data_path_complete, "esm_output/"),
-                                        acc_complete,
-                                        layers,
-                                        method_attn = "raw",
-                                        scr_include = FALSE)
-
-# Save the results.
-saveRDS(attn_raw_complete, file = file.path(data_path_complete, "esm_processed/attn_raw.rds"))
+saveRDS(attn_raw_headMean_colMean, file = file.path(data_path_00100, "esm_processed/attn_raw_headMean_colMean.rds"))
+saveRDS(attn_raw_headMean_colQuan90, file = file.path(data_path_00100, "esm_processed/attn_raw_headMean_colQuan90.rds"))
+saveRDS(attn_raw_headQuan90_colMean, file = file.path(data_path_00100, "esm_processed/attn_raw_headQuan90_colMean.rds"))
+saveRDS(attn_raw_headQuan90_colQuan90, file = file.path(data_path_00100, "esm_processed/attn_raw_headQuan90_colQuan90.rds"))
 ```
