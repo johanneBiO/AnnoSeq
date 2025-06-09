@@ -16,6 +16,7 @@ readJSON <- function(file_path){
     lapply(fromJSON)
   
   data_combined <- c()
+  
   for (batch in data_batch){
     if(is.list(batch)){
       data_combined <- c(data_combined, batch)

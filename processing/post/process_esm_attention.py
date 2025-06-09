@@ -99,11 +99,14 @@ df["layer_feature"] = df["layer"].map(lambda x: f"layer_{x:02}_feature_") + df["
 # Pivot to wide format
 df = df.pivot(index=["accession", "position"], columns="layer_feature", values="value").reset_index()
 
-# Smoothing
+# Smoothing + add relative position 
 def smooth_group(group):
     group = group.sort_values('position')
+
+    group['relative_position'] = (group['position'] - group['position'].min()) / (group['position'].max() - group['position'].min())
+
     for col in layer_columns:
-        group[col] = gaussian_filter1d(group[col].values, sigma=1)
+        group[col] = gaussian_filter1d(group[col].values, radius = 5, sigma=1)
     return group
 
 layer_columns = [col for col in df.columns if col.startswith("layer")]
