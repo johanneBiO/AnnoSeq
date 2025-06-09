@@ -7,23 +7,26 @@ editor: visual
 ```{r, echo=FALSE, message=FALSE}
 rm(list = ls())
 
+library(here)
 library(tidyr)
+library(dplyr)
 library(purrr)
-library(patchwork)
+library(stringr)
 library(IRanges)
+library(patchwork)
 
 source("utils/smoothing.R")
 source("utils/theme.R")
 ```
 
-In this script, I will explore the behavior of the attention scores from the ESM-2 model.
+In this script, I will explore the behavior of the attention scores from the ESM-2 model on a smaller subset.
 
-## Why use raw attention scores?
+## Set up
 
-I ran the ESM-2 model for 100 sequences and extracted the raw and normalized attention scores for each self-attention layer. I extract the raw attention scores, because we would otherwise force unannotated positions to have the same degree of signal as the annotated positions when applying the softmax. The heads within each layer was summarized by two methods: 1) by taken the average across heads and 2) computing the 90th quantile across heads. To compare the biological signal with a baseline, I also ran the model for 5 scramble sequences per biological sequence. The attention scores have been aggregated into vectors by taken the col mean to obtain an attention score per position. For the scrambled sequences, I summarize the results by computing the mean, standard deviation, minimum and maximum attention per position across the 5 sequences. Let's read in the data as well as the annotations. Besides normalizing from scrambled sequences, I will also apply a min-max normalization function.
+I ran the ESM-2 model for 100 sequences and extracted the raw attention scores for each self-attention layer. I extract the raw attention scores, because we would otherwise force unannotated positions to have the same degree of signal as the annotated positions when applying the softmax. The heads within each layer was summarized either by taken the average across heads or computing the 90% quantile across heads. To compare the biological signal with a baseline, I also ran the model for 5 scramble sequences per biological sequence. The attention scores have been aggregated into vectors by taken the col mean or 90% quantile to obtain an attention score per position. For the scrambled sequences, I summarize the results by computing the mean, standard deviation, minimum and maximum attention per position across the 5 sequences. Let's read in the data as well as the annotations.
 
 ```{r}
-res_path <- here("reports/figures")
+res_path <- here("reports/figures/explore_attention/")
 
 anno <- readRDS(file = file.path(here("data/complete/annotations/processed/anno.rds")))
 
@@ -34,17 +37,12 @@ anno_expanded <- anno |>
   unnest(position) |>
   select(accession, position, category, feature_type)
 
-# Define the min-max normalization function
-minMaxNormalize <- function(x) {
-  (x - min(x)) / (max(x) - min(x))
-}
-
 # A helper function to load and process a single file
-process_attn_file <- function(path, head_sum, attn_type) {
+process_attn_file <- function(path, head_type, col_type) {
   readRDS(path) %>%
-    mutate(head_sum = head_sum,
-           attn_type = attn_type) |>
-    select(accession, layer, position, bio_attn, bio_attn_Z, head_sum, attn_type) |>
+    mutate(head_type = head_type,
+           col_type = col_type) |>
+    select(accession, layer, position, bio_attn, bio_attn_Z, head_type, col_type) |>
     left_join(anno_expanded,
             by = c("accession", "position"),
             relationship = "many-to-many") |>
@@ -53,374 +51,230 @@ process_attn_file <- function(path, head_sum, attn_type) {
 
 # Define all files and their metadata
 files_info <- tribble(
-  ~path, ~head_sum, ~attn_type,
-  here("data/subset_00100/esm_processed/attn_raw_head_mean.rds"), "mean",   "raw",
-  here("data/subset_00100/esm_processed/attn_raw_head_quan90.rds"), "quan90", "raw",
+  ~path, ~head_type, ~col_type,
+  here("data/subset_00100/esm_processed/attention/attn_raw_headMean_colMean.rds"), "mean",   "mean",
+  here("data/subset_00100/esm_processed/attention/attn_raw_headMean_colQuan90.rds"), "mean", "quan90",
+  here("data/subset_00100/esm_processed/attention/attn_raw_headQuan90_colMean.rds"), "quan90",   "mean",
+  here("data/subset_00100/esm_processed/attention/attn_raw_headQuan90_colQuan90.rds"), "quan90", "quan90",
 )
 
 # Process and combine all into one data frame
-all_attn <- pmap_dfr(files_info, process_attn_file)
+all_attn_rep <- pmap_dfr(files_info, process_attn_file)
 ```
 
-For now, we do not consider the annotation type. We will just distinguish between annotated vs. unannotated positions. 
+For now, we do not consider the annotation type. We will just distinguish between annotated vs. unannotated positions.
 
 ```{r}
-all_attn <- all_attn |>
+all_attn <- all_attn_rep |>
   mutate(annotated = case_when(feature_type == "unannotated" ~ "No",
                                .default = "Yes")) |>
   distinct()
 ```
 
-We look at the distribution of the attention for unannotated and annotated positions.
+## Distribution of the Attention Scores
+
+We look at the distribution of the attention for unannotated and annotated positions for the different methods for summarizing the attention signal.
 
 ```{r}
 all_attn  |>
-  #group_by(layer, head_sum, attn_type, annotated) |>
-  #summarise(med = median(bio_attn)) |>
-  ungroup() |>
-  ggplot(mapping = aes(y = bio_attn_Z,
+  ggplot(mapping = aes(y = bio_attn,
                        x = annotated,
                        color = annotated)) +
-  geom_violin(alpha = 0.6, fill ="#1f618d") +
-  geom_boxplot(width = 0.2) +
-  #geom_line() + 
-  main_theme +
-  labs(y = "Attention Score") +
-  facet_grid(rows = vars(attn_type),
-             cols = vars(head_sum),
-             scales = "free")
-  #geom_violin(alpha = 0.6, width = 10) + 
-  #geom_boxplot(width = 0.2)
-            #´    fill = "grey80",
-            #   outlier.shape = 1,
-            #   outlier.color = scales::alpha("black", 0.4))
+  geom_violin(mapping = aes(fill = annotated),
+              alpha = 0.6) +
+  geom_boxplot(width = 0.2,
+               outlier.size = 0.5,
+               outlier.alpha = 0.4) +
+  scale_color_manual(values = c("#1f618d", "#990000")) +
+  scale_fill_manual(values = c("#1f618d", "#990000")) +
+  labs(x = "Annotated Position",
+       y = "Attention Score") +
+  guides(color = "none",
+         fill = "none") +
+  facet_grid(rows = vars(col_type),
+             cols = vars(head_type),
+             scales = "free",
+             labeller = labeller(head_type = c("mean" = "Heads - Mean", "quan90" = "Heads - Q90"),
+                                 col_type = c("mean" = "Columns - Mean", "quan90" = "Columns - Q90"))) +
+  main_theme + 
+  theme(strip.background = element_rect(fill="#cccccc", 
+                                        color = "#cccccc"),
+        strip.text=element_text(color="black", 
+                                face = "bold",
+                                size = 11),
+        axis.ticks.x = element_blank(),
+        plot.margin = margin(20, 20, 20, 20), # t, r, b, l 
+        panel.spacing = unit(0.4, "lines"),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+        panel.background = element_rect(fill = "white", color = NA))
 
-#ggsave(filename = file.path(res_path, "dist.png"), width = 4, height = 4, dpi = 300)
+ggsave(filename = file.path(res_path, "dist_bio_attn.png"), width = 5, height = 5, dpi = 300)
 ```
 
-```{r}
-data <- all_attn  |>
-  select(-bio_attn, -bio_attn_minMax) |>
-  pivot_wider(names_from = layer,
-              names_prefix = "layer",
-              values_from = bio_attn_Z) |>
-  filter(head_sum == "quan90", attn_type == "raw")
-
-# Select only numeric columns
-numeric_data <- data |>
-  select(where(is.numeric)) |>
-  select(-position)
-
-# Run PCA
-pca_result <- prcomp(numeric_data, center = TRUE, scale. = TRUE)
-
-
-df_pca <- bind_cols(
-  data |> select(feature_type),
-  as_tibble(pca_result$x)
-)
-
-ggplot(df_pca, aes(x = PC1, y = PC4, color = feature_type)) +
-  geom_point()
-```
-
-
-
-## Distribution of Attention Weights
-
-We look at the distribution between the attention weights after aggregating to 1D. We will compare the attentions for the biological sequence with the baseline, that is, the mean attention across the 5 scrambled sequences.
-
-```{r}
-plotDistAttention <- function(attn, title){
-  plot <- attn |>
-    select(bio_attn, scr_attn_mean) |>
-    pivot_longer(cols = bio_attn:scr_attn_mean,
-                 names_to = "attn_type",
-                 values_to = "attn") |>
-    mutate(attn_type = case_when(attn_type == "bio_attn" ~ "Biological signal",
-                                 attn_type == "scr_attn_mean" ~ "Baseline signal")) |>
-    ggplot(mapping = aes(x = attn_type,
-                         y = attn,
-                         fill = attn_type)) +
-    geom_violin(alpha = 0.6) +
-    geom_boxplot(width = 0.2,
-                 fill = "grey80",
-                 outlier.shape = 1,
-                 outlier.color = scales::alpha("black", 0.4)) + 
-    theme_classic() + 
-    theme(legend.position = "none",
-          plot.title = element_text(size = 12),
-          panel.grid.major.y = element_line(color = "grey80"),
-          axis.ticks.x = element_blank()) + 
-    labs(x = "",
-         y = "Attention",
-         title = title) + 
-    scale_fill_manual(values = c("#1f618d", "#1f618d"))
-  
-  return(plot)
-}
-
-plotDistAttention(attn_raw_mean, "Attention: Raw, Aggregation: Mean") +
-plotDistAttention(attn_raw_q90, "Attention: Raw, Aggregation: Q90") +
-  plot_layout(guides = "collect")
-```
-
-There seems to be a bigger difference between the distributions for the attention scores after aggregating using the 90% quantile.
-
-The table also contains a Z-score for the attention signal (bio_attn_Z). The Z-score is a normalized biological signal calculated per position by subtracting the mean of the attention across the 5 scrambled sequences divided by the standard deviation.
+It is difficult to see a clear difference between the distributions. The table also contains a Z-score for the attention signal (bio_attn_Z). The Z-score is a normalized biological signal calculated per position by subtracting the mean of the attention across the 5 scrambled sequences divided by the standard deviation.
 
 $$Z = \frac{A_{bio}-A_{\mu_{scr}}}{A_{\sigma_{scr}}}$$
 
-The purpose of this normalization is to center the signal around 0.
+The purpose of this normalization is to center the signal around 0. Let's see if this we can recover the biological signal by normalizing the attention scores from the scrambled sequences.
 
 ```{r}
-plotDistBioZ <- function(attn, title){
-  plot <- attn |>
-    select(bio_attn_Z) |>
-    ggplot(mapping = aes(y = bio_attn_Z)) +
-    geom_boxplot(fill = "grey80",
-                 outlier.shape = 1,
-                 outlier.color = scales::alpha("black", 0.4)) + 
-    theme_classic() + 
-    theme(legend.position = "none",
-          plot.title = element_text(size = 12),
-          panel.grid.major.y = element_line(color = "grey80"),
-          axis.ticks.x = element_blank()) + 
-    labs(x = "",
-         y = "Attention",
-         title = title)
-  
-  return(plot)
-}
+all_attn  |>
+  ggplot(mapping = aes(y = bio_attn_Z,
+                       x = annotated,
+                       color = annotated)) +
+  geom_violin(mapping = aes(fill = annotated),
+              alpha = 0.4) +
+  geom_boxplot(width = 0.2,
+               outlier.size = 0.5,
+               outlier.alpha = 0.6) +
+  scale_color_manual(values = c("#1f618d", "#990000")) +
+  scale_fill_manual(values = c("#1f618d", "#990000")) +
+  labs(x = "Annotated Position",
+       y = "Attention Score") +
+  guides(color = "none",
+         fill = "none") +
+  facet_grid(rows = vars(col_type),
+             cols = vars(head_type),
+             scales = "free",
+             labeller = labeller(head_type = c("mean" = "Heads - Mean", "quan90" = "Heads - Q90"),
+                                 col_type = c("mean" = "Columns - Mean", "quan90" = "Columns - Q90"))) +
+  main_theme + 
+  theme(strip.background = element_rect(fill="#cccccc", 
+                                        color = "#cccccc"),
+        strip.text=element_text(color="black", 
+                                face = "bold",
+                                size = 11),
+        axis.ticks.x = element_blank(),
+        plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
+        panel.spacing = unit(0.4, "lines"),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+        panel.background = element_rect(fill = "white", color = NA))
 
-plotDistBioZ(attn_raw_mean, "Attention: Raw, Aggregation: Mean") +
-plotDistBioZ(attn_raw_q90, "Attention: Raw, Aggregation: Q90")
+ggsave(filename = file.path(res_path, "dist_bio_attn_Z.png"), width = 7, height = 5, dpi = 300)
 ```
 
-## Attention Across Layers and Annotation Types
-
-We want to look at the attention for each feature type across the different layers. I load the annotations also denoted as features.
-
-
-
-We join the annotations and lengths with the preprocessed attention weights.
-
-
-In general, the attention signal is highly noisy. Thus, we must apply smoothing to be able to make sense of it.
+In the above, we have just pooled the attention across layers. Let's look at the distribution of the attention across layers.
 
 ```{r}
-nearestUneven <- function(x) {
-  result <- sapply(x, function(val) {
-    if (val %% 1 != 0) {
-      val <- round(val)
-    }
-    if (val %% 2 == 0) {
-      lower_odd <- val - 1
-      upper_odd <- val + 1
-      if (abs(val - lower_odd) <= abs(val - upper_odd)) {
-        return(lower_odd)
-      } else {
-        return(upper_odd)
-      }
-    }
-    return(val)
-  })
-  
-  return(result)
-}
-
-gaussianKernel <- function(window, sigma){
-  # Generate a symmetric sequence around 0.
-  x <- seq(-(window-1)/2, (window-1)/2, by = 1)
-  # Calculate the Gaussian distribution.
-  kernel <- exp(-x^2 / (2 * sigma^2))
-  # Normalize the kernel so that it sums to 1.
-  kernel <- kernel / sum(kernel)
-  
-  return(kernel)
-}
-
-smoothAttention <- function(attention, method = "gaussian", window = 11, sigma = 5){
-  # Check input.
-  if (sum(method == c("mean", "gaussian")) != 1){
-    stop("Error: Method is not valid. Choose 'mean', 'gaussian' or 'exact'.")
-  }
-  
-  if (window %% 2 == 0){
-    stop("Error: Window must be an uneven number.")
-  }
-  
-  length <- length(attention)
-  size <- (window-1)/2
-  
-  # Padding of edges.
-  attention_pad <- c(rep(attention[1], size),
-                     attention,
-                     rep(attention[length], size))
-    
-  # Apply filter: Moving average.
-  if (method == "mean"){
-    attention_smooth <- stats::filter(attention_pad,
-                                      rep(1/window, window),
-                                      sides = 2) |>
-      as.numeric()
-    }
-  
-  # Apply filter: Gaussian kernel.
-  if (method == "gaussian"){
-    kernel <- gaussianKernel(window, sigma)
-    attention_smooth <- stats::filter(attention_pad,
-                                      kernel,
-                                      sides = 2)
-    }
-    
-  # Remove the padding.
-  attention_smooth <- attention_smooth[(size+1):(size+length)]
-  
-  return(attention_smooth)
-}
-```
-
-To summarize the attention, I average the attention weights for each position within a given feature type across layers.
-
-```{r}
-plotHeatmap <- function(data, discrete = TRUE){
-  
-  # Summarize the data.
-  data_summarized <- data |>
-    mutate(W = nearestUneven(length/10),
-           S = W/6) |>
-    group_by(accession, layer) |>
-    mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z, 
-                                                window = unique(W), 
-                                                sigma = unique(S))) |>
-    ungroup() |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type))) |>
-    group_by(layer, feature_type) |>
-    summarise(mean_attn = mean(bio_attn_Z_smooted),
-              .groups = "drop")
-  
-  # Select unannotated to compare.
-  data_unannotated <- data_summarized |>
-    filter(feature_type == "Unannotated") |>
-    select(layer, unannotated_attn = mean_attn)
-  
-  # Color the average attention only when above unannotated attention.
-  if (discrete == TRUE){
-    data_summarized <- left_join(data_summarized,
-                                 data_unannotated,
-                                 by = "layer") |>
-      mutate(condition = case_when(mean_attn > unannotated_attn ~ "> Unannotated",
-                                   .default = "< Unannotated"),
-             condition = factor(condition)) |>
-      filter(feature_type != "Unannotated")
-    
-     p_heat <- ggplot(data_summarized,
-                     mapping = aes(x = layer, 
-                                   y = feature_type, 
-                                   fill = condition)) +
-       geom_tile(color = "black") +
-       scale_fill_manual(values = c("white", "#1f618d")) +
-       scale_x_continuous(breaks = seq(1, 33, by = 2),
-                         expand = c(0, 0)) + 
-      scale_y_discrete(expand = c(0, 0)) +
-      labs(x = "Layer",
-           y = "Feature Type",
-           fill = "Condition") +
-      theme_classic()
-  } else {
-    # Color as scale. 
-    p_heat <- ggplot(data_summarized,
-                     mapping = aes(x = layer, 
-                                   y = feature_type, 
-                                   fill = mean_attn)) +
-      geom_tile(color = "black") +
-      scale_fill_gradient(low = "white", high = "#1f618d") + 
-      scale_x_continuous(breaks = seq(1, 33, by = 2),
-                         expand = c(0, 0)) + 
-      scale_y_discrete(expand = c(0, 0)) +
-      labs(x = "Layer",
-           y = "Feature Type",
-           fill = "Mean Attention") +
-      theme_classic()
-  }
-  
-  return(p_heat)
-}
-```
-
-We look at the pattern for the attention weights aggregated by taken the average.
-
-```{r}
-plotHeatmap(attn_raw_mean, discrete = FALSE) 
-```
-
-We see a trend, but this trend also accounts for unannotated positions. We color the tiles, but only if they exceed the average attention for unannotated areas.
-
-```{r}
-plotHeatmap(attn_raw_mean, discrete = TRUE) 
-```
-
-We look at the pattern for the attention weights aggregated by taken the 90% quantile.
-
-```{r}
-plotHeatmap(attn_raw_q90, discrete = FALSE) 
-```
-
-```{r}
-plotHeatmap(attn_raw_q90, discrete = TRUE) 
-```
-
-We look at the mean attention in a slightly different way.
-
-```{r}
-plotPath <- function(data){
-  p_path <- data |>
-    mutate(W = nearestUneven(length/10),
-           S = W/6) |>
-    group_by(accession, layer) |>
-    mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z, 
-                                                window = unique(W), 
-                                                sigma = unique(S))) |>
-    ungroup() |>
-    arrange(category, feature_type) |>
-    mutate(feature_type = factor(feature_type,
-                                 levels = unique(feature_type))) |>
-    group_by(layer, feature_type) |>
-    summarise(mean_attn = mean(bio_attn_Z_smooted),
-              .groups = "drop") |>
-    ggplot(mapping = aes(x = layer,
-                       y = mean_attn)) +
-    geom_path(color = "#1f618d") +
+plotDistAttentionLayers <- function(type){
+  all_attn  |>
+    filter(head_type == type) |>
+    mutate(layer = factor(layer)) |>
+    ggplot(mapping = aes(y = bio_attn,
+                         x = layer)) +
+    geom_boxplot(color = "#1f618d",
+                 fill = "#1f618d",
+                 alpha = 0.6,
+                 width = 0.6,
+                 outlier.size = 0.5,
+                 outlier.alpha = 0.6) +
     labs(x = "Layer",
-           y = "Feature Type") + 
-    theme_classic() + 
-    facet_wrap(~ feature_type, ncol = 4)
-  
-  return(p_path)
+         y = "Attention Score") +
+    facet_grid(rows = vars(col_type),
+               cols = vars(head_type),
+               scales = "free",
+               labeller = labeller(head_type = c("mean" = "Heads - Mean", "quan90" = "Heads - Q90"),
+                                   col_type = c("mean" = "Columns - Mean", "quan90" = "Columns - Q90"))) + 
+    main_theme +
+    theme(strip.background = element_rect(fill="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
+          panel.spacing = unit(0.4, "lines"),
+          panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+          panel.background = element_rect(fill = "white", color = NA))
 }
 
-plotPath(attn_raw_mean)
+plotDistAttentionLayers("mean")
+ggsave(filename = file.path(res_path, "dist_bio_attn_layers_head_means.png"), width = 7, height = 6, dpi = 300)
 ```
 
+We generate the plot for the attention signal based on the 90% quantile of the heads.
+
 ```{r}
-plotPath(attn_raw_q90)
+plotDistAttentionLayers("quan90")
+ggsave(filename = file.path(res_path, "dist_bio_attn_layers_head_quan.png"), width = 7, height = 6, dpi = 300)
+```
+
+Let's see how it looks like for one aggregation method while distinguishing between annotated and unannotated positions.
+
+```{r}
+all_attn  |>
+  filter(head_type == "quan90",
+          col_type == "quan90") |>
+  mutate(layer = factor(layer)) |>
+  ggplot(mapping = aes(y = bio_attn,
+                       x = layer,
+                       color = annotated,
+                       fill = annotated)) +
+  geom_boxplot(alpha = 0.6,
+               width = 0.6,
+               outlier.size = 0.5,
+               outlier.alpha = 0.6) +
+  labs(x = "Layer",
+       y = "Attention Score",
+       color = "Annotated",
+       fill = "Annotated") + 
+  scale_color_manual(values = c("#1f618d", "#990000")) +
+  scale_fill_manual(values = c("#1f618d", "#990000")) +
+  main_theme +
+  theme(strip.background = element_rect(fill="#cccccc", 
+                                        color = "#cccccc"),
+        strip.text=element_text(color="black", 
+                                face = "bold",
+                                size = 11),
+        plot.margin = margin(20, 20, 20, 20), # t, r, b, l 
+        panel.spacing = unit(0.4, "lines"),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+        panel.background = element_rect(fill = "white", color = NA))
+
+ggsave(filename = file.path(res_path, "dist_bio_attn_layers_head_quan_col_quan.png"), width = 9, height = 3, dpi = 300)
+```
+
+## Distribution of the Attention within the sequence
+
+I look at the attention scores in relation to the position within the sequence.
+
+```{r}
+all_attn  |>
+  filter(head_type == "mean",
+          col_type == "mean") |>
+  filter(layer == 11) |>
+  group_by(accession) |>
+  mutate(length = max(position),
+         pos_percent = position/length) |>
+  ggplot(mapping = aes(x = pos_percent,
+                       y = bio_attn)) +
+  geom_bin2d(bins = 120) + 
+  labs(x = "Relative Position (Position / Seq. Length)",
+       y = "Attention Score",
+       fill = "Count") + 
+  scale_fill_gradient(high = "#1f618d", low = "#e0e7ef") + 
+  scale_x_continuous(limits = c(0, 1), 
+                     expand = c(0, 0),
+                     labels = function(x) round(x, 2)) + 
+  main_theme + 
+  theme(plot.margin = margin(20, 20, 20, 20),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8)) 
+
+ggsave(filename = file.path(res_path, "dist_bio_attn_pos.png"), width = 6, height = 4, dpi = 300)
 ```
 
 ## Visualize examples
 
-Above, I only considered the raw attention weights. When using the normalized weights, we force the scramble sequences to have more signal than they actually have because the softmax will put all weights between 0 and 1 summing to 1 per row. This will make the true biological signal vanish when comparing to the baseline. As a results, biological interesting region might not be detected.
-
-We define a function to plot the attention signal with features for a given sequences within a given layer.
+To get an idea about what is going on, I define a function to plot the attention signal with features for a given sequences.
 
 ```{r}
-plotExample <- function(data_attn, data_feature, acc, L){
+plotExample <- function(data_attn, data_feature, acc){
   
   # Define region intervals.
   region <- data_feature |>
-    filter(accession == acc)
+    filter(accession == acc) |>
+    mutate(feature_type = str_c(
+    str_to_upper(str_sub(feature_type, 1, 1)),
+    str_to_lower(str_sub(feature_type, 2))))
   
   # Extract single sites from regions.
   site <- region |>
@@ -438,15 +292,10 @@ plotExample <- function(data_attn, data_feature, acc, L){
   # Get the attention signal and apply smoothing.
   attn <- data_attn |>
     filter(accession == acc) |>
-    mutate(W = 7,#nearestUneven(length/10),
-           S = 1) |> #W/6) |>
     group_by(accession, layer) |>
     mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z, 
-                                                window = unique(W), 
-                                                sigma = unique(S)),
-           bio_attn_smooted = smoothAttention(bio_attn_minMax, 
-                                              window = unique(W), 
-                                              sigma = unique(S))) |>
+                                                window = 11, 
+                                                sigma = 1)) |>
     ungroup() |>
     mutate(layer_group = case_when(layer < 12 ~ "Layer 1:11",
                                    layer > 22 ~ "Layer 23:33",
@@ -467,13 +316,13 @@ plotExample <- function(data_attn, data_feature, acc, L){
     geom_rect(background_line,
               mapping = aes(xmin = start_position,
                             xmax = end_position,
-                            ymin = y_position - 0.02,
-                            ymax = y_position + 0.02),
+                            ymin = y_position - 0.05,
+                            ymax = y_position + 0.05),
               color = "#E6E6E6") + 
     geom_rect(mapping = aes(xmin = start_position, 
                             xmax = end_position, 
-                            ymin = y_position - 0.2, 
-                            ymax = y_position + 0.2, 
+                            ymin = y_position - 0.4, 
+                            ymax = y_position + 0.4, 
                             fill = feature_type),
               alpha = 1, 
               color = "black") +
@@ -499,57 +348,209 @@ plotExample <- function(data_attn, data_feature, acc, L){
          color = "Site Type",
          fill = "Region Type") +
     theme_bw() +
-    theme(legend.position = "left",
+    theme(legend.position = "bottom",
           axis.text.y = element_blank(), 
-          axis.ticks.y = element_blank())
+          axis.ticks.y = element_blank(),    
+          axis.title.x = element_text(face = "bold", vjust = -1),
+          axis.title.y = element_text(face = "bold", vjust = 3),
+          legend.title = element_text(face = "bold", size = 11),
+          legend.text = element_text(size = 11),
+          plot.margin = margin(0, 20, 20, 20),
+          legend.margin = margin(t = 20, r = 0, b = 0, l = 0)) +
+    guides(fill = guide_legend(ncol = 1,
+                               title.position = "top"),
+           color = guide_legend(ncol = 1,
+                                title.position = "top"))
   
   # Add attention.
   p_attn <- ggplot(data = attn,
                    mapping = aes(x = position,
                                  y = bio_attn_Z_smooted,
-                                 group = layer,
-                                 color = layer)) +
-    geom_path() + 
+                                 group = layer)) +
+    geom_path(color = "#1f618d") + 
     geom_hline(yintercept = 0,
-               color = "red") +
+               color = "#990000") +
     scale_x_continuous(breaks = c(1, seq(50, seq_length-30, by = 50), seq_length),
                        limits = c(1, seq_length),
                        expand = expansion(mult = c(0.04, 0.04))) + 
-    #facet_grid(rows = vars(layer_group), scales = "free") +
+    facet_grid(rows = vars(layer_group), scales = "free") +
     labs(x = "", 
          y = "Attention Score",
          color = "Layer",
          title = acc) +
     theme_bw() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank())
+    theme(strip.background = element_rect(fill ="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          axis.title.x = element_text(face = "bold", vjust = -1),
+          axis.title.y = element_text(face = "bold", vjust = 3),
+          legend.title = element_text(face = "bold", size = 11),
+          legend.text = element_text(size = 11),
+          plot.margin = margin(20, 20, 0, 20))
   
-  p_attn / p_features + plot_layout(guides = "collect")
+  p_attn / p_features + plot_layout(heights = c(2, 1))
+  
 }
 ```
 
-We sample an example
+We choose the relevant data.
 
 ```{r}
-attn_ <- readRDS(here("data/subset_00100/esm_processed/attn_raw_head_mean.rds")) |>
-  group_by(accession, layer) %>%
-    mutate(bio_attn_minMax = minMaxNormalize(bio_attn)) %>%
-    ungroup()
-
-accessions <- unique(attn_$accession)
+attn <- readRDS(files_info$path[1]) 
+accessions <- unique(attn$accession)
 ```
 
+We sample an example.
 
 ```{r}
-ex <- sample(accessions, size = 1)
-print(ex)
+#ex <- sample(accessions, size = 1)
+#print(ex)
+
+ex1 <- "P40198"
 ```
 
 Let's visualize this sequence.
 
 ```{r}
-plotExample(attn_, anno, ex, 33)
+plotExample(attn, anno, ex1) + 
+  scale_color_manual(values = c("#990000")) + 
+  scale_fill_manual(values = c("#117864", "#f39c12", "#7d3c98", "#2980b9", "#d35400", "#5d6d7e"))
+ggsave(filename = file.path(res_path, paste("example_", ex1, ".png", sep = "")), width = 8, height = 7, dpi = 300)
+```
 
+```{r}
+ex2 <- "Q8TDD2"
+
+plotExample(attn, anno, accessions[30]) + 
+  scale_color_manual(values = c("#990000", "#1f618d")) + 
+  scale_fill_manual(values = c("#117864", "#f39c12", "#7d3c98", "#2980b9", "#d35400", "#5d6d7e"))
+ggsave(filename = file.path(res_path, paste("example_", ex2, ".png", sep = "")), width = 8, height = 8, dpi = 300)
+```
+
+## Attention Across Layers and Annotation Types
+
+We want to look at the attention for each feature type across the different layers. I load the annotations also denoted as features. In general, the attention signal is highly noisy. Thus, we must apply smoothing to be able to make sense of it. To summarize the attention, I average the attention weights for each position within a given feature type across layers.
+
+```{r}
+plotCapPos <- function(attn, threshold){
+  p_cap_pos <- attn |>
+    mutate(feature_type = factor(feature_type),
+           category = factor(category),
+           feature_type = str_c(str_to_upper(str_sub(feature_type, 1, 1)),
+                                str_to_lower(str_sub(feature_type, 2))),
+           category = str_c(str_to_upper(str_sub(category, 1, 1)),
+                            str_to_lower(str_sub(category, 2))),
+           category = case_when(category == "Amino acid modification" ~ "AAM",
+                                category == "Molecule processing" ~ "MP",
+                                category == "Unannotated" ~ "U",
+                                .default = category)) |>
+    arrange(accession, position) |>
+    group_by(accession, layer) |>
+    mutate(bio_attn_Z_smooted = smoothAttention(bio_attn_Z,
+                                                window = 11,
+                                                sigma = 1)) |>
+    ungroup() |>
+    mutate(high = case_when(bio_attn_Z_smooted > threshold ~ 1,
+                            .default = 0)) |>
+    group_by(layer, category, feature_type) |>
+    summarise(detected = sum(high),
+              total = n()) |>
+    ungroup() |>
+    mutate(proportion = detected/total) |>
+    ggplot(mapping = aes(x = layer,
+                         y = feature_type,
+                         fill = proportion)) +
+    geom_tile(color = "black") +
+    scale_fill_gradient2(low = "#1f618d", mid = "white", high = "#990000", midpoint = 0.5) + 
+    scale_x_continuous(breaks = seq(1, 33, by = 2),
+                       expand = c(0, 0)) +
+    scale_y_discrete(expand = c(0, 0)) +
+    labs(x = "Layer",
+         y = "Annotation Type",
+         fill = "Proportion") +
+    facet_grid(rows = vars(category),
+               scales = "free_y",
+               space = "free_y") + 
+    main_theme + 
+    theme(legend.position = "bottom",
+          legend.title.align = 0.5,
+          strip.background = element_rect(fill ="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          panel.border = element_rect(color = "black", fill = NA, size = 0.8),
+          plot.margin = margin(20, 20, 20, 20)) +
+    guides(fill = guide_colorbar(title.position = "bottom", barwidth = 10, barheight = 0.5))
+  
+  p_cap_freq <- attn |>
+    filter(layer == 1) |>
+    arrange(category, feature_type) |>
+    mutate(feature_type = factor(feature_type,
+                                 levels = unique(feature_type))) |>
+    group_by(category, feature_type) |>
+    summarise(total = n(),
+              seq = length(unique(accession))) |>
+    ggplot(mapping = aes(x = total,
+                         y = feature_type)) +
+    geom_bar(stat = "identity",
+             fill = "black") +
+    geom_text(mapping = aes(label = total),
+              hjust = -0.15,
+              size = 2.5) +
+    geom_text(mapping = aes(x = -2000,
+                            label = paste0("(", seq, ")")),
+              color = "#990000",
+              size = 2.5) +
+    scale_x_continuous(limits = c(-2000, 25000)) +
+    scale_y_discrete(expand = c(0, 0)) + 
+    facet_grid(rows = vars(category),
+               scales = "free_y",
+               space = "free_y") + 
+    labs(x = "Total Position Count") + 
+    theme_void() + 
+    theme(strip.text = element_blank(),
+          axis.title.x = element_text(face = "bold", vjust = -1),
+          plot.margin = margin(20, 20, 20, 20)) 
+  
+  p_combined <- p_cap_pos + p_cap_freq
+  
+  return(p_combined)
+}
+```
+
+```{r}
+for (i in c("mean", "quan90")){
+  for (j in c("mean", "quan90")){
+    for (k in c(2, 3)){
+      plot <- all_attn_rep  |>
+        filter(head_type == i,
+               col_type == j) |>
+        plotCapPos(threshold = k) 
+      
+      ggsave(filename = file.path(res_path, paste("cap_pos_head_", i, "_col_", j, "_t", k, ".png", sep = "")),
+             width = 10, 
+             height = 6,
+             dpi = 300)
+    }
+  }
+}
+```
+
+```{r}
+partition <- read_csv("data/subset_00100/additional/partition.csv")
+
+all_attn_rep |>
+  filter(head_type == "mean",
+         col_type == "mean",
+         layer == 1) |>
+  left_join(partition,
+            by = "accession") |>
+  group_by(partition, feature_type) |>
+  count() |>
+  arrange(feature_type)
 ```
 
 
@@ -557,6 +558,11 @@ plotExample(attn_, anno, ex, 33)
 
 
 
+
+
+```{r}
+all_attn_rep
+```
 
 
 

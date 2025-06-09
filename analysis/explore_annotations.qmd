@@ -24,7 +24,7 @@ I will load both the final processed annotations and the annotations from before
 
 ```{r}
 data_path <- here("data/complete/annotations")
-res_path <- here("reports/figures")
+res_path <- here("reports/figures/explore_annotations/")
 
 anno <- readRDS(file = file.path(data_path, 
                                  "processed/anno.rds"))

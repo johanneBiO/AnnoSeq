@@ -1,0 +1,143 @@
+---
+title: "Evaluation of the XGBoost Performance (100 sequences)"
+format: html
+editor: visual
+---
+
+```{r, echo=FALSE, message=FALSE}
+rm(list = ls())
+
+library(here)
+library(purrr)
+library(tidyverse)
+library(janitor)
+library(yardstick)
+
+source("utils/theme.R")
+
+res_path <- here("reports/figures/xgboost_performance")
+```
+
+```{r}
+getPerformance <- function(folder_path, aggr_method){
+  
+  # Get all prediction files
+  files <- list.files(path = folder_path, 
+                      pattern = "^pred_.*\\.csv$", 
+                      full.names = TRUE)
+  
+  # Function to calculate metrics
+  compute_metrics <- function(file_path) {
+    data <- read_csv(file_path,
+                     show_col_types = FALSE) |>
+      clean_names() |>
+      mutate(true = factor(true,
+                           levels = c(0, 1)),
+             prediction = factor(prediction,
+                                 levels = c(0, 1)))
+    
+    # Get model name from file name
+    model_name <- str_remove(basename(file_path), "^pred_") |>
+      str_remove("\\.csv$")
+  
+    # Compute metrics
+    metrics <- metric_set(accuracy, precision, recall, f_meas)(data, truth = true, estimate = prediction)
+  
+    # Confusion matrix
+    cm <- conf_mat(data, truth = true, estimate = prediction)$table 
+    
+    tp <- cm["1", "1"]
+    fp <- cm["1", "0"]
+    tn <- cm["0", "0"]
+    fn <- cm["0", "1"]
+  
+    # Combine everything
+    metrics_wide <- metrics |>
+      pivot_wider(names_from = .metric, values_from = .estimate)
+  
+    tibble(model = model_name,
+           aggr_method = aggr_method,
+           TP = tp,
+           FP = fp,
+           TN = tn,
+           FN = fn,
+           P = TP + FN,
+           N = TN + FP,
+           total = P + N,
+           accuracy = P/total*TP/(TP+FN) + N/total*TN/(TN+FP),
+           precision = TP / (TP + FP),
+           recall = TP / (TP + FN),
+           f1 = P/total*2*TP/(2*TP+FP+FN) + N/total*2*TN/(2*TN+FN+FP))
+    }
+  
+  # Apply to all files
+  results <- map_dfr(files, compute_metrics)
+  
+  return(results)
+}
+
+# Define all files and their metadata
+files_info <- tribble(
+  ~folder_path, ~aggr_method,
+  here("xgboost/results/xgboost_headMean_colMean_00100/predictions/"), "Heads - Mean / Columns - Mean",
+  here("xgboost/results/xgboost_headMean_colQuan90_00100/predictions/"), "Heads - Mean / Columns - Quan90",
+  here("xgboost/results/xgboost_headQuan90_colMean_00100/predictions/"), "Heads - Quan90 / Columns - Mean",
+  here("xgboost/results/xgboost_headQuan90_colQuan90_00100/predictions/"), "Heads - Quan90 / Columns - Quan90"
+)
+
+# Process and combine all into one data frame
+all_results <- pmap_dfr(files_info, getPerformance)
+```
+
+```{r}
+all_results |>
+  select(model, aggr_method, precision, recall) |>
+  mutate(model = factor(model,
+                        levels = c("disulfide_bond", "zinc_finger_region", "transmembrane_region", "topological_domain", "region_of_interest", "domain", "binding_site")),
+         model = str_c(str_to_upper(str_sub(model, 1, 1)),
+                       str_to_lower(str_sub(model, 2))),
+         model = str_replace_all(model, "_", " ")) |>
+  pivot_longer(cols = precision:recall,
+               names_to = "metric") |>
+  mutate(metric = str_to_title(metric)) |>
+  ggplot(mapping = aes(x = model,
+                       y = value,
+                       fill = aggr_method)) +
+    geom_bar(stat = "identity",
+             position = position_dodge(),
+             color = "black") +
+    labs(x = "Model",
+         y = "Performance",
+         fill = "Aggregation Method") + 
+  scale_fill_manual(values = c("#1f618d", "#2980b9", "#990000", "#d35400")) +
+    facet_grid(rows = vars(metric),
+               scales = "free_y",
+               space = "free_y") +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 50, 
+                                     hjust = 1),
+          strip.background = element_rect(fill="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          axis.ticks.x = element_blank(),
+          panel.spacing = unit(0.4, "lines"),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          axis.title.x = element_text(face = "bold", vjust = -1),
+          axis.title.y = element_text(face = "bold", vjust = 3),
+          legend.title = element_text(face = "bold", size = 11),
+          legend.text = element_text(size = 11),
+          legend.position = "top",
+          plot.margin = margin(20, 20, 20, 20)) +
+  guides(fill = guide_legend(ncol = 2,
+                             title.position = "top"))
+
+ggsave(filename = file.path(res_path, "xgboost_res_00100.png"), width = 7, height = 6, dpi = 300)
+```
+
+
+
+
+

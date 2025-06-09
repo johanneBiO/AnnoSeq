@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Evaluation of the XGBoost Performance"
 format: html
 editor: visual
 ---
@@ -15,12 +15,12 @@ library(yardstick)
 
 source("utils/theme.R")
 
-res_path <- here("reports/figures")
+res_path <- here("reports/figures/xgboost_performance")
 ```
 
 ```{r}
 # Set folder path
-folder_path <- here("randomF/attn_raw_mean_xgboost/predictions/")
+folder_path <- here("randomF/attn_raw_mean_xgboost_01000/predictions/")
 
 # Get all prediction files
 files <- list.files(path = folder_path, 
@@ -156,3 +156,16 @@ data_full |>
 
 ggsave(filename = file.path(res_path, "rf_res_raw_25_iter.png"), width = 9, height = 6, dpi = 300)
 ```
+
+```{r}
+test <- attn_raw_quan |>
+  filter(partition == "train", 
+         feature_type == "unannotated") |>
+  group_by(accession) |>
+  count()
+
+sum(test$n > 50)
+```
+
+
+
