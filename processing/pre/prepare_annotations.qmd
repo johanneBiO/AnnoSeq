@@ -200,7 +200,7 @@ saveRDS(feature_data, file = file.path(data_complete_path,
                                        "annotations/interim/anno_filter2.rds"))
 ```
 
-## Filter annotations with missing start or end positon
+## Filter annotations with missing start or end position
 
 I remove annotations without start and end positions.
 
@@ -297,5 +297,3 @@ feature_data_expand <- feature_data |>
 saveRDS(feature_data_expand, file = file.path(data_complete_path,
                                               "annotations/processed/anno_expanded.rds"))
 ```
-
-
