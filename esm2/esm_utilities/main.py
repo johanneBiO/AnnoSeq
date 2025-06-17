@@ -1,6 +1,6 @@
 ##########################################################################################
-# This script runs a modified version of ESM-2 to extract attention scores. Both raw and 
-# normalized attention scores are aggregated using row means.
+# This script runs a modified version of ESM-2 to extract attention scores. 
+# Attention scores are aggregated based based on columns.
 # Optionally, the model can be run on pre-generated scrambled sequences, which should be 
 # stored in a shared folder.
 ##########################################################################################

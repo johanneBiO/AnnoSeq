@@ -130,7 +130,7 @@ def get_esm2_output(dataloader, model, alphabet, res_dir, layer_indices, norm = 
         sum_dim = 1
 
     # Set quantiles
-    quantiles = torch.tensor([0.1, 0.25, 0.5, 0.75, 0.9]) # 0.9  
+    quantiles = torch.tensor([0.1, 0.25, 0.5, 0.75, 0.9]) # or simply 0.9  
         
     # Run ESM-2
     for batch_idx, (batch_labels, batch_strs, batch_tokens) in enumerate(dataloader):
