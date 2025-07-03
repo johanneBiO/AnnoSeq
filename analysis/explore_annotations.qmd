@@ -23,14 +23,14 @@ This code explores the the frequency of the different annotation types within th
 I will load both the final processed annotations and the annotations from before the final filtering, in order to assess which annotations are excluded due to their absence in the cropped sequences.
 
 ```{r}
-data_path <- here("data/complete/annotations")
+data_path <- here("data/complete")
 res_path <- here("reports/figures/explore_annotations/")
 
 anno <- readRDS(file = file.path(data_path, 
-                                 "processed/anno.rds"))
+                                 "annotations/processed/anno.rds"))
 
 anno_filter3 <- readRDS(file.path(data_path, 
-                                  "interim/anno_filter3.rds"))
+                                  "annotations/interim/anno_filter3.rds"))
 ```
 
 We will add a column describing if the annotation is part of the cropped sequence or not.
@@ -41,12 +41,50 @@ anno_filter3 <- anno_filter3 |>
                               start_position > length_adj ~ "No"))
 ```
 
+I also load the sequence lengths as well as the accession for the working dataset of 1000 sequences.
+
+```{r}
+seq_length <- read_csv(file = file.path(data_path,
+                                        "additional/seq_length_sp_all.csv"))
+seq_length_cropped <- read_csv(file = file.path(data_path,
+                                        "additional/seq_length_sp_cropped.csv"))
+
+acc_01000 <- read_table(file = here("data/subset_01000/additional/accessions.txt"),
+                        col_names = FALSE)
+
+acc_00100 <- read_table(file = here("data/subset_00100/additional/accessions.txt"),
+                        col_names = FALSE)
+```
+
+## Number of cropped sequences
+
+Let's look at the number of cropped sequences for the full dataset and the subset.
+
+```{r}
+seq_length <- left_join(seq_length,
+                        seq_length_cropped,
+                        by = "Accession") 
+colnames(seq_length) <- c("accession", "length", "adj_length")
+
+seq_length <- seq_length |>
+  mutate(adj_length = case_when(is.na(adj_length) ~ 0,
+                                .default = adj_length))
+
+print(sum(seq_length$length != seq_length$adj_length) / length(seq_length$length) * 100)
+
+seq_length_01000 <- seq_length |>
+  filter(accession %in% acc_01000$X1)
+
+print(sum(seq_length_01000$length != seq_length_01000$adj_length) / length(seq_length_01000$length) * 100)
+```
+
 ## Excluded annotations
 
-Let's look at the number of annotations types being excluded.
+Let's look at the number of annotations types being excluded for the working subset.
 
 ```{r}
 anno_numbers <- anno_filter3 |>
+  filter(accession %in% acc_01000$X1) |>
   group_by(included, category, feature_type) |>
   summarise(n = n(),
             .groups = "drop")
@@ -71,10 +109,11 @@ print(paste("Included (%):", round(included/total*100, digits = 2)))
 print(paste("Excluded (%):", round(excluded/total*100, digits = 2)))
 ```
 
-We are in fact missing 13.83% of the available annotations due to the limitation of the ESM-2 model. Let's see if this will cause a problem for analyzing certain annotation types.
+We are in fact missing 15.93% of the available annotations due to the limitation of the ESM-2 model. Let's see if this will cause a problem for analyzing certain annotation types.
 
 ```{r}
 anno_filter3 |>
+  filter(accession %in% acc_01000$X1) |>
   group_by(category, feature_type, included) |>
   summarise(n = n()) |>
   mutate(freq = n / sum(n),
@@ -118,15 +157,80 @@ anno_filter3 |>
         plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
         panel.spacing = unit(0.4, "lines"))
 
-ggsave(filename = file.path(res_path, "included_anno.png"), width = 9, height = 5, dpi = 300)
+ggsave(filename = file.path(res_path, "excluded_anno.png"), width = 9, height = 5, dpi = 300)
+```
+
+## Number of positions
+
+We explore the number of positions within each annotation types across the training and test set.
+
+```{r}
+# Subset
+anno_01000 <- anno |>
+  filter(accession %in% acc_01000$X1)
+
+# Partition
+partition_01000 <- read_csv(here("data/subset_01000/additional/partition.csv"))
+
+# Expand annotations
+anno_expanded <- anno_01000 |>
+  rowwise() |>
+  mutate(position = list(seq(start_position, end_position))) |>
+  unnest(position) |>
+  select(accession, position, category, feature_type) |>
+  right_join(seq_length_01000)
+
+
+# Expand positions
+positions_01000 <- seq_length |>
+  uncount(adj_length, .id = "position") |>
+  filter(accession %in% acc_01000$X1) |>
+  left_join(partition_01000,
+            by = "accession") |>
+  select(accession, position, partition) |>
+  left_join(anno_expanded,
+            by = c("accession", "position")) |>
+  mutate(across(c(category, feature_type), ~ ifelse(is.na(.), "unannotated", .))) |>
+  select(-length, -adj_length)
+
+count_01000 <- positions_01000 |>
+  group_by(partition, feature_type) |>
+  count() |>
+  ungroup()
+
+count_00100 <- positions_01000 |>
+  filter(accession %in% acc_00100$X1) |>
+  mutate(across(c(category, feature_type), ~ ifelse(is.na(.), "unannotated", .))) |>
+  group_by(partition, feature_type) |>
+  count() |>
+  arrange(feature_type) |>
+  ungroup()
+
+count_00100 |>
+  filter(n > 100)
+```
+
+We investigate how many sequences accounts for the unannotated positions.
+
+```{r}
+n <- positions_01000 |>
+  filter(feature_type == "unannotated") |>
+  group_by(accession) |>
+  count() |>
+  arrange(-n) |>
+  pull(n)
+
+n_cumsum <- cumsum(n)
+
+which(n_cumsum > sum(n) * 0.9)[1]
 ```
 
 ## Annotation frequency
 
-I take a look at the frequency of the different annotations across the complete set.
+I take a look at the frequency of the different annotations across the subset.
 
 ```{r}
-anno |>
+plot_reg <- anno_01000 |>
   group_by(category, feature_type) |>
   mutate(feature_type = str_to_title(feature_type),
          category = str_to_title(category),
@@ -137,13 +241,15 @@ anno |>
          category = factor(category)) |>
   ggplot(mapping = aes(x = feature_type)) +
   geom_bar(fill = "#1f618d") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+          vjust = -0.3, size = 3.2, color = "#1f618d") + 
   labs(x = "Feature type",
        y = "Frequency") + 
   facet_grid(cols = vars(category),
              scales = "free_x",
              space = "free_x") +
-  scale_y_continuous(breaks = seq(0, 60000, by = 10000),
-                     labels = label_number(scale = 1e-3, suffix = "K")) + 
+  scale_y_continuous(breaks = seq(0, 3000, by = 500),
+                     expand = expansion(mult = c(0, 0.1))) + 
   main_theme + 
   theme(axis.text.x = element_text(angle = 50, 
                                    hjust = 1),
@@ -156,5 +262,44 @@ anno |>
         plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
         panel.spacing = unit(0.4, "lines"))
 
-ggsave(filename = file.path(res_path, "freq_anno.png"), width = 9, height = 5, dpi = 300)
+plot_pos <- anno_expanded |>
+  filter(!(is.na(feature_type))) |>
+  group_by(category, feature_type) |>
+  mutate(feature_type = str_to_title(feature_type),
+         category = str_to_title(category),
+         category = case_when(category == "Amino Acid Modification" ~ "AAM",
+                              category == "Molecule Processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category)) |>
+  ggplot(mapping = aes(x = feature_type)) +
+  geom_bar(fill = "#1f618d") +
+  geom_text(stat = "count", aes(label = after_stat(count)), 
+          vjust = -0.3, size = 3.2, color = "#1f618d") + 
+  labs(x = "Feature type",
+       y = "Frequency") + 
+  facet_grid(cols = vars(category),
+             scales = "free_x",
+             space = "free_x") +
+  scale_y_continuous(breaks = seq(0, 100000, by = 20000),
+                     labels = label_number(scale = 1e-3, suffix = "K"),
+                     expand = expansion(mult = c(0, 0.1))) + 
+  main_theme + 
+  theme(axis.text.x = element_text(angle = 50, 
+                                   hjust = 1),
+        strip.background = element_rect(fill="#cccccc", 
+                                        color = "#cccccc"),
+        strip.text=element_text(color="black", 
+                                face = "bold",
+                                size = 11),
+        axis.ticks.x = element_blank(),
+        plot.margin = margin(20, 40, 20, 40), # t, r, b, l 
+        panel.spacing = unit(0.4, "lines"))
+
+plot_reg / plot_pos
+  
+ggsave(filename = file.path(res_path, "freq_anno.png"), width = 9, height = 9, dpi = 300)
 ```
+
+
+

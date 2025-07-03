@@ -9,15 +9,12 @@
 /data/complete/
 /data/subset_00100/
 /data/subset_01000/
+/data/external
 
 # Other
-/randomF/
 /reports/
 /remove/
-/esm2/esm_utilities/example_proteins/
 /esm2/esm_utilities/slurm_logs/
-/code/analysis/
-smoothing.R
-/code/processing/prepare_classification.qmd
-/code/processing/process_esm_output.qmd
-process_esm_as_vectors.qmd
+/xgboost/results/
+/xgboost/slurm_logs/
+/clustering/slurm_logs/

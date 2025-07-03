@@ -15,11 +15,11 @@ source /home/people/jobao/miniconda3/etc/profile.d/conda.sh
 conda activate esm
 
 ### Subset 100
-#INPUT_FILE="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/biological_seq/seq_00100.fasta"
-#RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/esm_output_headQuan90_colQuan90/"
-#SCR_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/scrambled_seq/"
+INPUT_FILE="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/biological_seq/seq_00100.fasta"
+RES_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/esm_output_headQuan90_colQuan90/"
+SCR_DIR="/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/data/subset_00100/sequences/scrambled_seq/"
 
-#python main.py -seq $INPUT_FILE -res $RES_DIR -q
+python main.py -seq $INPUT_FILE -res $RES_DIR -q
 #python main.py -seq $INPUT_FILE -res $RES_DIR -s -scr $SCR_DIR -q
 
 ### Subset 1000

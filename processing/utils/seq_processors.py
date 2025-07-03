@@ -301,3 +301,51 @@ def scramble_fasta(infile_path, outfile_dir, outfile_name):
     
     infile.close()
     outfile.close()
+
+def fasta_to_length_csv(infile_path, output_path):
+    """
+    Extracts accession numbers and sequence lengths from a FASTA file and writes to a CSV.
+
+    Args:
+    - input_fasta_path: Path to the input FASTA file.
+    - output_csv_path: Path to the output CSV file.
+
+    Returns:
+    - A CSV file with two columns: Accession and Length.
+    """
+
+    infile = Path(infile_path)
+
+    if not infile.is_file():
+        print(f"The input file is invalid. Invalid file: {infile}")
+        return
+
+    accessions = []
+    lengths = []
+
+    with open(infile, "r") as infile:
+        header, seq = None, []
+        for line in infile:
+            line = line.strip()
+            if line.startswith(">"):
+                if header:
+                    accession = header.split("|")[1] if "|" in header else header[1:]
+                    accessions.append(accession)
+                    lengths.append(len("".join(seq)))
+                header = line
+                seq = []
+            else:
+                seq.append(line)
+        # Process the last sequence
+        if header:
+            accession = header.split("|")[1] if "|" in header else header[1:]
+            accessions.append(accession)
+            lengths.append(len("".join(seq)))
+
+    df = pd.DataFrame({
+        "Accession": accessions,
+        "Length": lengths
+    })
+
+    df.to_csv(output_path, index=False)
+    print(f"CSV saved to {output_path}.")

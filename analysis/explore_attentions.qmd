@@ -52,10 +52,10 @@ process_attn_file <- function(path, head_type, col_type) {
 # Define all files and their metadata
 files_info <- tribble(
   ~path, ~head_type, ~col_type,
-  here("data/subset_00100/esm_processed/attention/attn_raw_headMean_colMean.rds"), "mean",   "mean",
-  here("data/subset_00100/esm_processed/attention/attn_raw_headMean_colQuan90.rds"), "mean", "quan90",
-  here("data/subset_00100/esm_processed/attention/attn_raw_headQuan90_colMean.rds"), "quan90",   "mean",
-  here("data/subset_00100/esm_processed/attention/attn_raw_headQuan90_colQuan90.rds"), "quan90", "quan90",
+  here("data/subset_00100/esm_processed/attention/attn_headMean_colMean.rds"), "mean",   "mean",
+  here("data/subset_00100/esm_processed/attention/attn_headMean_colQuan90.rds"), "mean", "quan90",
+  here("data/subset_00100/esm_processed/attention/attn_headQuan90_colMean.rds"), "quan90",   "mean",
+  here("data/subset_00100/esm_processed/attention/attn_headQuan90_colQuan90.rds"), "quan90", "quan90",
 )
 
 # Process and combine all into one data frame
@@ -68,7 +68,17 @@ For now, we do not consider the annotation type. We will just distinguish betwee
 all_attn <- all_attn_rep |>
   mutate(annotated = case_when(feature_type == "unannotated" ~ "No",
                                .default = "Yes")) |>
+  select(-category, -feature_type) |>
   distinct()
+```
+
+Let us quickly see how many positions there are in each of the four groups.
+
+```{r}
+all_attn |>
+  group_by(head_type, col_type, annotated) |>
+  filter(layer == 1) |>
+  count()
 ```
 
 ## Distribution of the Attention Scores
@@ -202,8 +212,8 @@ Let's see how it looks like for one aggregation method while distinguishing betw
 
 ```{r}
 all_attn  |>
-  filter(head_type == "quan90",
-          col_type == "quan90") |>
+  filter(head_type == "mean",
+          col_type == "mean") |>
   mutate(layer = factor(layer)) |>
   ggplot(mapping = aes(y = bio_attn,
                        x = layer,
@@ -230,7 +240,7 @@ all_attn  |>
         panel.border = element_rect(color = "black", fill = NA, size = 0.8),
         panel.background = element_rect(fill = "white", color = NA))
 
-ggsave(filename = file.path(res_path, "dist_bio_attn_layers_head_quan_col_quan.png"), width = 9, height = 3, dpi = 300)
+ggsave(filename = file.path(res_path, "dist_bio_attn_layers_head_mean_col_mean.png"), width = 9, height = 3, dpi = 300)
 ```
 
 ## Distribution of the Attention within the sequence
@@ -429,6 +439,12 @@ plotExample(attn, anno, accessions[30]) +
 ggsave(filename = file.path(res_path, paste("example_", ex2, ".png", sep = "")), width = 8, height = 8, dpi = 300)
 ```
 
+```{r}
+anno |>
+  filter(accession == ex2) 
+  
+```
+
 ## Attention Across Layers and Annotation Types
 
 We want to look at the attention for each feature type across the different layers. I load the annotations also denoted as features. In general, the attention signal is highly noisy. Thus, we must apply smoothing to be able to make sense of it. To summarize the attention, I average the attention weights for each position within a given feature type across layers.
@@ -524,48 +540,17 @@ plotCapPos <- function(attn, threshold){
 ```{r}
 for (i in c("mean", "quan90")){
   for (j in c("mean", "quan90")){
-    for (k in c(2, 3)){
+    for (k in c(1)){
       plot <- all_attn_rep  |>
         filter(head_type == i,
                col_type == j) |>
         plotCapPos(threshold = k) 
       
       ggsave(filename = file.path(res_path, paste("cap_pos_head_", i, "_col_", j, "_t", k, ".png", sep = "")),
-             width = 10, 
-             height = 6,
+             width = 9, 
+             height = 5,
              dpi = 300)
     }
   }
 }
 ```
-
-```{r}
-partition <- read_csv("data/subset_00100/additional/partition.csv")
-
-all_attn_rep |>
-  filter(head_type == "mean",
-         col_type == "mean",
-         layer == 1) |>
-  left_join(partition,
-            by = "accession") |>
-  group_by(partition, feature_type) |>
-  count() |>
-  arrange(feature_type)
-```
-
-
-
-
-
-
-
-
-```{r}
-all_attn_rep
-```
-
-
-
-
-
-

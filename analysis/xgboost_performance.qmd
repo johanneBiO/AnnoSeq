@@ -1,5 +1,5 @@
 ---
-title: "Evaluation of the XGBoost Performance (100 sequences)"
+title: "Evaluation of the XGBoost Performance"
 format: html
 editor: visual
 ---
@@ -17,6 +17,8 @@ source("utils/theme.R")
 
 res_path <- here("reports/figures/xgboost_performance")
 ```
+
+We define a function to computes the performance after running XGBoost on the test set. We then process all the results across the different aggregation methods applied on 100 sequences.
 
 ```{r}
 getPerformance <- function(folder_path, aggr_method){
@@ -40,9 +42,6 @@ getPerformance <- function(folder_path, aggr_method){
     model_name <- str_remove(basename(file_path), "^pred_") |>
       str_remove("\\.csv$")
   
-    # Compute metrics
-    metrics <- metric_set(accuracy, precision, recall, f_meas)(data, truth = true, estimate = prediction)
-  
     # Confusion matrix
     cm <- conf_mat(data, truth = true, estimate = prediction)$table 
     
@@ -50,10 +49,6 @@ getPerformance <- function(folder_path, aggr_method){
     fp <- cm["1", "0"]
     tn <- cm["0", "0"]
     fn <- cm["0", "1"]
-  
-    # Combine everything
-    metrics_wide <- metrics |>
-      pivot_wider(names_from = .metric, values_from = .estimate)
   
     tibble(model = model_name,
            aggr_method = aggr_method,
@@ -89,11 +84,18 @@ files_info <- tribble(
 all_results <- pmap_dfr(files_info, getPerformance)
 ```
 
+The results are visualized.
+
 ```{r}
 all_results |>
   select(model, aggr_method, precision, recall) |>
+  filter(model != "zinc_finger_region") |>
   mutate(model = factor(model,
-                        levels = c("disulfide_bond", "zinc_finger_region", "transmembrane_region", "topological_domain", "region_of_interest", "domain", "binding_site")),
+                        levels = c("disulfide_bond", 
+                                   "transmembrane_region", 
+                                   "topological_domain", 
+                                   "region_of_interest", "domain", 
+                                   "binding_site")),
          model = str_c(str_to_upper(str_sub(model, 1, 1)),
                        str_to_lower(str_sub(model, 2))),
          model = str_replace_all(model, "_", " ")) |>
@@ -102,16 +104,17 @@ all_results |>
   mutate(metric = str_to_title(metric)) |>
   ggplot(mapping = aes(x = model,
                        y = value,
+                       color = aggr_method,
                        fill = aggr_method)) +
     geom_bar(stat = "identity",
              position = position_dodge(),
-             color = "black") +
+             alpha = 0.6) +
     labs(x = "Model",
          y = "Performance",
          fill = "Aggregation Method") + 
-  scale_fill_manual(values = c("#1f618d", "#2980b9", "#990000", "#d35400")) +
+  scale_fill_manual(name = "Aggregation Method", values = c("#d35400", "#990000", "#2980b9", "#1f618d")) +
+  scale_color_manual(name = "Aggregation Method", values = c("#d35400", "#990000", "#2980b9", "#1f618d")) + 
     facet_grid(rows = vars(metric),
-               scales = "free_y",
                space = "free_y") +
     theme_bw() + 
     theme(axis.text.x = element_text(angle = 50, 
@@ -134,10 +137,99 @@ all_results |>
   guides(fill = guide_legend(ncol = 2,
                              title.position = "top"))
 
-ggsave(filename = file.path(res_path, "xgboost_res_00100.png"), width = 7, height = 6, dpi = 300)
+ggsave(filename = file.path(res_path, "xgboost_res_00100_fullgrid.png"), width = 7, height = 6, dpi = 300)
 ```
 
+Afterwards, we do the same for the models trained on 1000 sequences.
 
+```{r}
+file_info <- tribble(
+  ~folder_path, ~aggr_method,
+  here("xgboost/results/xgboost_headQuan90_colQuan_01000_1094iter/predictions/"),
+  "Heads - Quan90 / Columns - Quan")
 
+results <- pmap_dfr(file_info, getPerformance)
 
+# View combined results
+print(results)
+```
 
+The results are modified a bit prior to plotting the results.
+
+```{r}
+anno <- readRDS(here("data/complete/annotations/processed/anno.rds")) |>
+  select(category, feature_type) |>
+  distinct() 
+
+summary_path <- here("xgboost/results/xgboost_headQuan90_colQuan_01000_1094iter/summary/model_comparison_results.csv")
+
+summary <- read_csv(summary_path) |>
+  select(...1, Undersampling)
+
+colnames(summary) <- c("feature_type", "class_imbalance")
+
+colnames(results)[1] <- "feature_type"
+
+results <- results |>
+  left_join(summary,
+            by = "feature_type") |>
+  mutate(feature_type = str_replace_all(as.character(feature_type), "_", " ")) |>
+  left_join(anno,
+            by = "feature_type") |>
+  arrange(category, feature_type) |>
+  mutate(feature_type = paste0(toupper(substring(feature_type, 1, 1)),
+                               tolower(substring(feature_type, 2))),
+         category = str_to_title(category),
+         category = case_when(category == "Amino Acid Modification" ~ "AAM",
+                              category == "Molecule Processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category),
+         feature_type = if_else(class_imbalance == TRUE, paste0("* ", feature_type), as.character(feature_type))) |>
+  pivot_longer(cols = accuracy:f1,
+               names_to = "metric",
+               values_to = "value") |>
+  mutate(metric = str_to_title(metric))
+```
+
+The results are shown below.
+
+```{r}
+results |>
+  filter(metric != "Accuracy",
+         metric != "F1") |>
+  ggplot(mapping = aes(x = feature_type,
+                       y = value)) +
+  geom_bar(stat = "identity",
+           fill = "#1f618d",
+           color = "#1f618d",
+           alpha = 0.6) +
+  geom_hline(yintercept = 0.5,
+             color = "#990000") +
+    labs(x = "Model",
+         y = "Performance") + 
+    facet_grid(cols = vars(category),
+               rows = vars(metric),
+               scales = "free_x",
+               space = "free_x") +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 50, 
+                                       hjust = 1),
+            strip.background = element_rect(fill="#cccccc", 
+                                            color = "#cccccc"),
+            strip.text=element_text(color="black", 
+                                    face = "bold",
+                                    size = 11),
+            axis.ticks.x = element_blank(),
+            panel.spacing = unit(0.4, "lines"),
+            panel.grid.major.x = element_blank(),
+            panel.grid.minor.y = element_blank(),
+            axis.title.x = element_text(face = "bold", vjust = -1),
+            axis.title.y = element_text(face = "bold", vjust = 3),
+            legend.title = element_text(face = "bold", size = 11),
+            legend.text = element_text(size = 11),
+            legend.position = "top",
+            plot.margin = margin(20, 20, 20, 20))
+
+ggsave(filename = file.path(res_path, "xgboost_res_01000_1094iter.png"), width = 8, height = 5.5, dpi = 300)
+```
