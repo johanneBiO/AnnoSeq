@@ -1,18 +1,14 @@
-####################################################################################
-# This script contains functions used to smooth the attention scores from the ESM-2.
-####################################################################################
-
-nearestUneven <- function(x) {
+nearestUneven <- function(x){    
   ### Get the nearest uneven number.
   
-  result <- sapply(x, function(val) {
+  result <- sapply(x, function(val){
     if (val %% 1 != 0) {
       val <- round(val)
     }
     if (val %% 2 == 0) {
       lower_odd <- val - 1
       upper_odd <- val + 1
-      if (abs(val - lower_odd) <= abs(val - upper_odd)) {
+      if (abs(val - lower_odd) <= abs(val - upper_odd)){
         return(lower_odd)
       } else {
         return(upper_odd)

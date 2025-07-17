@@ -4,9 +4,12 @@ library(here)
 library(tidyr)
 library(dplyr)
 library(readr)
+library(purrr)
 library(rhdf5)
-library(Seurat)
 library(caret)
+library(Seurat)
+library(tidyverse)
+library(patchwork)
 
 source("analysis/utils/theme.R")
 source("analysis/utils/clust.R")
@@ -52,12 +55,32 @@ feature_type_levels <- anno |>
 
 feature_type_levels <- paste0(toupper(substring(feature_type_levels, 1, 1)),
                               tolower(substring(feature_type_levels, 2)))
+feature_type_levels[feature_type_levels == "Dna-binding region"] <- "DNA-binding region"
 
-seurat_true$feature_type <- paste0(toupper(substring(seurat_true$feature_type, 1, 1)),
-                                   tolower(substring(seurat_true$feature_type, 2)))
+seurat_true$feature_type <- as.character(paste0(toupper(substring(seurat_true$feature_type, 1, 1)),
+                                                tolower(substring(seurat_true$feature_type, 2))))
+
+seurat_true$feature_type[seurat_true$feature_type == "Dna-binding region"] <- "DNA-binding region"
 
 seurat_true$feature_type <- factor(seurat_true$feature_type,
                                    levels = feature_type_levels)
+
+# Define a category tibble
+categories <- anno |>
+  group_by(category, feature_type) |>
+  count() |>
+  select(category, feature_type) |>
+  mutate(feature_type = str_c(str_to_upper(str_sub(feature_type, 1, 1)),
+                              str_to_lower(str_sub(feature_type, 2))),
+         feature_type = case_when(feature_type == "Dna-binding region" ~ "DNA-binding region",
+                                  .default = feature_type),
+         category = str_c(str_to_upper(str_sub(category, 1, 1)),
+                          str_to_lower(str_sub(category, 2))),
+         category = case_when(category == "Amino acid modification" ~ "AAM",
+                              category == "Molecule processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category))
 
 ################################################################################
 # SCALING
@@ -96,7 +119,7 @@ p_varexp <- pc_df |>
                 "cum_var", 
                 highlight_row = 9, 
                 x_label = "PC", 
-                y_label = "Variance Explained",
+                y_label = "Cumulative Explained Variance",
                 n_x = 10, 
                 n_y = 10) + 
   main_theme 
@@ -171,7 +194,7 @@ p_true_ari <- results |>
                 n_y = 10) +
   main_theme
 
-p_true_ncluster <-results |>
+p_true_ncluster <- results |>
   plotHighlight("resolution", 
                 "n_cluster", 
                 highlight_row = 5, 
@@ -180,20 +203,6 @@ p_true_ncluster <-results |>
                 n_x = 20, 
                 n_y = 10) +
   main_theme
-
-categories <- anno |>
-  group_by(category, feature_type) |>
-  count() |>
-  select(category, feature_type) |>
-  mutate(feature_type = factor(feature_type),
-         category = factor(category),
-         feature_type = str_c(str_to_upper(str_sub(feature_type, 1, 1)),
-                              str_to_lower(str_sub(feature_type, 2))),
-         category = str_c(str_to_upper(str_sub(category, 1, 1)),
-                          str_to_lower(str_sub(category, 2))),
-         category = case_when(category == "Amino acid modification" ~ "AAM",
-                              category == "Molecule processing" ~ "MP",
-                              .default = category))
 
 ################################################################################
 # EVALUATE CLUSTERING
@@ -272,132 +281,28 @@ p_true_umap_label_new <- p_true_umap_label_new +
 
 ggsave(filename = file.path(res_path, "true_combined_res.png"), width = 14, height = 9, dpi = 300)
 
-# Let's see the proportion of correctly labled regions based on the clustering
+# Let's see the proportion of correctly labbeled regions based on the clustering
 sum(as.character(Idents(seurat_true)) == as.character(seurat_true$feature_type)) / length(as.character(seurat_true$feature_type))
 
 # Number of represented annotation types after the labeling
 unique(as.character(Idents(seurat_true)))
+
+# Percentage of regions belonging to those annotation types not represented after labeling
+not_represented <- setdiff(unique(as.character(seurat_true$feature_type)), unique(as.character(Idents(seurat_true)))) 
+sum(as.character(seurat_true$feature_type) %in% not_represented) / length(as.character(seurat_true$feature_type))
 
 # Compute the background accuracy
 cluster_res <- tibble(cluster = seurat_true$RNA_snn_res.0.5,
                       cluster_label = Idents(seurat_true),
                       feature_type = seurat_true$feature_type)
 
-set.seed(123)  
+accuracyPerClass(cluster_res, categories)
 
-shuffled_accuracies <- map_dfr(1:11, function(i) {
-  shuffled_true <- sample(cluster_res$feature_type)
-  shuffled_data <- tibble(feature_type = shuffled_true, label = cluster_res$cluster_label)
-  
-  shuffled_data |>
-    mutate(match = as.character(feature_type) == as.character(label)) |>
-    group_by(feature_type) |>
-    summarise(accuracy = sum(match)/length(match)) |>
-    mutate(run = i)
-})
+ggsave(filename = file.path(res_path, "true_accuracy_per_class.png"), width = 9, height = 5, dpi = 300)
 
-# Median background accuracy per class
-background_accuracy <- shuffled_accuracies |>
-  group_by(feature_type) |>
-  summarise(bg_accuracy = median(accuracy))
+confusionMat(cluster_res)
 
-accuracy_by_class <- cluster_res |>
-  mutate(match = as.character(feature_type) == as.character(cluster_label)) |>
-  group_by(feature_type) |>
-  summarise(accuracy = sum(match)/length(match)) |>
-  left_join(background_accuracy,
-            by = "feature_type") |>
-  left_join(categories,
-            by = "feature_type")
-
-ggplot(accuracy_by_class, 
-       mapping = aes(x = feature_type)) +
-  geom_bar(aes(y = accuracy), 
-           stat = "identity", 
-           color = "#1f618d",
-           fill = "#1f618d",
-           alpha = 0.8) +
-  geom_bar(aes(y = bg_accuracy), 
-           stat = "identity", 
-           color = "#1f618d",
-           fill = "#990000",
-           alpha = 1) +
-  labs(x = "Annotation Type",
-       y = "Accuracy") + 
-  facet_grid(cols = vars(category),
-             scales = "free_x",
-             space = "free_x") +
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 50, 
-                                   hjust = 1),
-        strip.background = element_rect(fill="#cccccc", 
-                                        color = "#cccccc"),
-        strip.text=element_text(color="black", 
-                                face = "bold",
-                                size = 11),
-        axis.ticks.x = element_blank(),
-        panel.spacing = unit(0.4, "lines"),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        axis.title.x = element_text(face = "bold", vjust = -1),
-        axis.title.y = element_text(face = "bold", vjust = 3),
-        legend.title = element_text(face = "bold", size = 11),
-        legend.text = element_text(size = 11),
-        legend.position = "top",
-        plot.margin = margin(20, 20, 20, 20))
-
-ggsave(filename = file.path(res_path, "true_accuracy.png"), width = 8, height = 5, dpi = 300)
-
-# Confusion matrix plot
-conf_mat <- confusionMatrix(cluster_res$cluster_label, cluster_res$feature_type)
-conf_df <- as.data.frame(conf_mat$table) |>
-  group_by(Reference) |>
-  mutate(Proportion = Freq / sum(Freq)) |>
-  ungroup()
-
-ggplot(conf_df, 
-       mapping = aes(x = Prediction, 
-                     y = Reference, 
-                     fill = Proportion)) +
-  geom_tile() +
-  geom_text(aes(label = Freq), 
-            color = "white") +
-  scale_fill_gradient(low = "#cccccc", 
-                      high = "#1f618d") +
-  labs(x = "Predicted Annotation Type",
-       y = "True Annotation Type") +
-  main_theme + 
-  theme(axis.text.x = element_text(angle = 50, 
-                                   hjust = 1),
-        strip.background = element_rect(fill="#cccccc", 
-                                        color = "#cccccc"),
-        strip.text=element_text(color="black", 
-                                face = "bold",
-                                size = 11),
-        axis.ticks.x = element_blank(),
-        panel.spacing = unit(0.4, "lines"),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        axis.title.x = element_text(face = "bold", vjust = -1),
-        axis.title.y = element_text(face = "bold", vjust = 3),
-        legend.title = element_text(face = "bold", size = 11),
-        legend.text = element_text(size = 11),
-        plot.margin = margin(20, 20, 20, 20))
-
-ggsave(filename = file.path(res_path, "true_confusion.png"), width = 10, height = 6, dpi = 300)
-
-tibble(start = seurat_true$start_position,
-       end = seurat_true$end_position,
-       feature_type = seurat_true$feature_type) |>
-  mutate(length = as.numeric(end) - as.numeric(start) + 1) |>
-  group_by(feature_type) |>
-  summarise(mean = mean(length),
-            median = median(length)) |>
-  left_join(accuracy_by_class,
-            by = "feature_type") |>
-  ggplot(mapping = aes(x = median,
-                       y = accuracy)) + 
-  geom_point()
+ggsave(filename = file.path(res_path, "true_confusion_mat.png"), width = 9, height = 7, dpi = 300)
 
 ################################################################################
 # PCA REPRESENTATION FOR THE PREDICTIONS
@@ -409,7 +314,7 @@ loadings <- seurat_true[["pca"]]@feature.loadings
 pred_path <- here("data/subset_01000/esm_processed/region_embedding/esm_regions_pred_1094iter.h5")
 seurat_pred <- makeSeuratObject(pred_path)
 
-# Check the dimensionality
+# Check the dimensions
 dim(seurat_pred)
 
 # Scale (without normalization) 
@@ -434,7 +339,7 @@ seurat_comb[["RNA"]] <- JoinLayers(seurat_comb[["RNA"]])
 # Project the data using the loadings from the PCA of the true annotated regions
 data_projected <- t(loadings) %*% as.matrix(GetAssayData(seurat_comb, slot = "scale.data")[rownames(loadings), ])
 
-# Add the projected PCA embeddings to the PCA slot
+# Add the projected PCA embedding to the PCA slot
 seurat_comb[["pca"]] <- CreateDimReducObject(embeddings = t(data_projected),
                                              loadings = seurat_true[["pca"]]@feature.loadings,
                                              key = "PC_",
@@ -458,7 +363,9 @@ meta <- seurat_comb@meta.data |>
 # Make feature type columns comparable with the metadata
 anno <- anno |>
   mutate(feature_type = paste0(toupper(substring(feature_type, 1, 1)),
-                               tolower(substring(feature_type, 2)))) |>
+                               tolower(substring(feature_type, 2))),
+         feature_type = case_when(feature_type == "Dna-binding region" ~ "DNA-binding region",
+                                  .default = feature_type)) |>
   arrange(accession, start_position) |>
   mutate(new_order = row_number())
   
@@ -503,8 +410,8 @@ seurat_comb@meta.data[is.na(seurat_comb@meta.data)] <- "unknown"
 # Create the graph
 seurat_comb <- FindNeighbors(seurat_comb, reduction = "pca", dims = 1:40)
 
-# We perform the clustering for a resolution between 0 and 10. 
-resolutions <- seq(1, 10, by = 0.5)
+# We perform the clustering for a resolution between 0 and 15. 
+resolutions <- seq(1, 15, by = 0.5)
 results_domain <- data.frame(resolution = numeric(), 
                              ARI = numeric(), 
                              n_cluster = numeric())
@@ -519,38 +426,54 @@ for (res in resolutions) {
   
   # Compute metrics
   ari <- adjusted_rand_index(seurat_domains$description, cluster_col)
+  ari_acc <- adjusted_rand_index(seurat_domains$accession, cluster_col) 
   n_cluster <- length(unique(cluster_col))
   
   results_domain <- rbind(results_domain, 
                           data.frame(resolution = res, 
-                                     ARI = ari, 
+                                     ARI = ari,
+                                     ARI_ACC = ari_acc,
                                      n_cluster = n_cluster))
 }
 
+# We look at the ARI using both domain subtype and sequence accession as reference
 results_domain |>
-  plotHighlight("resolution", 
-                "ARI", 
-                highlight_row = 15, 
-                x_label = "Resolution", 
-                y_label = "Adjusted Rand Index",
-                n_x = 20, 
-                n_y = 10) +
-  main_theme
+  pivot_longer(cols = ARI:ARI_ACC,
+               names_to = "Type",
+               values_to = "ARI") |>
+  mutate(Reference = case_when(Type == "ARI" ~ "Domain Subtype",
+                               Type == "ARI_ACC" ~ "Domain Seq. Acc.")) |>
+  ggplot(mapping = aes(x = resolution,
+                       y = ARI,
+                       color = Reference)) +
+  labs(x = "Resolution",
+       y = "Adjusted Rand Index") +
+  geom_vline(xintercept = 8,
+             color = "#cccccc",
+             size = 1.5) +
+  geom_path() +
+  geom_point(size = 2) + 
+  scale_color_manual(values = c("#990000", "#1f618d")) + 
+  scale_x_continuous(n.breaks = 20, limits = c(1, 15), expand = c(0.05, 0.05)) +
+  scale_y_continuous(n.breaks = 8, limits = c(0.05, 0.25), expand = c(0, 0)) +
+  main_theme + 
+  theme(legend.position = "top",
+        plot.margin = margin(5, 5, 5, 10),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8)) +
+  guides(fill = guide_legend(ncol = 2,
+                             title.position = "top"))
 
-results_domain |>
-  plotHighlight("resolution", 
-                "n_cluster", 
-                highlight_row = 15, 
-                x_label = "Resolution", 
-                y_label = "Number of Domain Clusters",
-                n_x = 20, 
-                n_y = 10) +
-  main_theme
-
+ggsave(filename = file.path(res_path, "ari_domain_subtypes_accession.png"), width = 6, height = 4, dpi = 300)
+  
 # Evaluate the clustering
 tab_df <- as.data.frame(table(cluster = seurat_domains$RNA_snn_res.8,
                               description = seurat_domains$description)) |>
-  rename(count = Freq) 
+  rename(count = Freq) |>
+  group_by(description) |>
+  mutate(proportion = count / sum(count),
+         proportion = case_when(proportion == 0 ~ NA,
+                                .default = proportion)) |>
+  ungroup()
 
 domain_clusters <- tab_df |>
   group_by(cluster) |>
@@ -563,34 +486,38 @@ p_domain <- tab_df |>
          feature_type = "Domains") |>
   ggplot(aes(x = description,
              y = cluster,
-             fill = nonzero)) +
-  geom_tile(color = "black") +
+             fill = proportion)) +
+  geom_tile(color = "#999999") +
   geom_text(aes(label = ifelse(count > 0, count, "")),
             color = "white",
+            fontface = "bold",
             size = 3) +
-  scale_fill_manual(
-    values = c(`TRUE` = "#1f618d", `FALSE` = "white"),
-    labels = c(`TRUE` = "> 0", `FALSE` = "= 0"),
-    name = "Count"
-  ) +
-  labs(x = "Annotation Subtype",
-       y = "Cluster") +
-  facet_grid(cols = vars(feature_type),
-             scales = "free_x",
-             space = "free_x") +
+  scale_fill_gradient2(mid = "#FFD6CC",
+                       high = "#990000",
+                       na.value = "#cccccc") +
+  labs(x = "Domain Subtype",
+       y = "Cluster",
+       fill = "Proportion") +
   main_theme +
   scale_x_discrete(expand = c(0, 0)) +
-  theme(axis.text.x = element_text(angle = 50, hjust = 1),
-        strip.background = element_rect(fill ="#cccccc", 
+  theme(axis.text.x = element_text(angle = 50, 
+                                   hjust = 1),
+        strip.background = element_rect(fill="#cccccc", 
                                         color = "#cccccc"),
         strip.text=element_text(color="black", 
                                 face = "bold",
                                 size = 11),
-        panel.border = element_rect(color = "black", fill = NA, size = 0.8),
-        plot.margin = margin(20, 20, 20, 20),
-        legend.position = "none") 
+        axis.ticks.x = element_blank(),
+        panel.spacing = unit(0.4, "lines"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.title.x = element_text(face = "bold", vjust = -1),
+        axis.title.y = element_text(face = "bold", vjust = 3),
+        legend.title = element_text(face = "bold", size = 11),
+        legend.text = element_text(size = 11),
+        plot.margin = margin(10, 10, 10, 60))
 
-ggsave(filename = file.path(res_path, "true_heatmap_domain_subtypes.png"), width = 6, height = 6, dpi = 300)
+ggsave(filename = file.path(res_path, "true_heatmap_domain_subtypes.png"), width = 9, height = 9, dpi = 300)
 
 ################################################################################
 # ASSIGN LABELS TO CLUSTERS
@@ -622,20 +549,17 @@ sum(as.character(Idents(seurat_sub_true)) == as.character(seurat_sub_true$featur
 # Number of represented annotation types after the labeling
 unique(as.character(Idents(seurat_sub_true)))
 
-# We look at the UMAP of the true after clustering with the predictions
-seurat_comb <- RunUMAP(seurat_comb, reduction = "pca", dims = 1:40, return.model = TRUE)
+# Compute the background accuracy
+cluster_res_new <- tibble(cluster = seurat_sub_true$RNA_snn_res.8,
+                          cluster_label = factor(Idents(seurat_sub_true), 
+                                                 levels = feature_type_levels), 
+                          feature_type = factor(seurat_sub_true$feature_type,
+                                                levels = feature_type_levels))
 
-seurat_comb |>
-  subset(subset = source == "true") |>
-  DimPlot(reduction = "umap", 
-          group.by = "label",
-          cols = palette_19,
-          alpha = 0.5,
-          pt.size = 1) +
-  labs(x = "UMAP 1", y = "UMAP 2", fill = "Annotation Type") + 
-  main_theme +
-  theme(plot.title = element_blank())
+accuracyPerClass(cluster_res_new, categories)
+ 
+ggsave(filename = file.path(res_path, "true_accuracy_per_class_new.png"), width = 9, height = 5, dpi = 300)
 
-# We save the combined data to progress with further analysis in another scripts.
-saveRDS(seurat_comb, 
-        file = here("data/subset_01000/esm_processed/region_embedding/seurat_comb.rds"))
+confusionMat(cluster_res_new)
+
+ggsave(filename = file.path(res_path, "true_confusion_mat_new.png"), width = 9, height = 7, dpi = 300)

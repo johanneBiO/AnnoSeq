@@ -78,7 +78,140 @@ plotHighlight <- function(data,
   return(p)
 }
 
-adjusted_rand_index <- function(labels_true, labels_pred) {
+confusionMat <- function(cluster_res){
+  
+  # Confusion matrix plot
+  conf_mat <- confusionMatrix(cluster_res$cluster_label, cluster_res$feature_type)
+  conf_df <- as.data.frame(conf_mat$table) |>
+    group_by(Reference) |>
+    mutate(Proportion = Freq / sum(Freq)) |>
+    ungroup() |>
+    mutate(Proportion = case_when(Proportion == 0 ~ NA,
+                                  .default = Proportion))
+  # Plot the results
+  ggplot(conf_df, 
+         mapping = aes(x = Prediction, 
+                       y = Reference,
+                       fill = Proportion)) +
+    geom_tile(color = "#999999") +
+    geom_text(aes(label = ifelse(Freq > 0, Freq, "")), 
+              color = "white",
+              size = 3,
+              fontface = "bold") +
+    scale_fill_gradient(low = "#D2E3EF", 
+                        high = "#1f618d",
+                        na.value = "#cccccc") +
+    labs(x = "Predicted Annotation Type",
+         y = "True Annotation Type") +
+    main_theme + 
+    theme(axis.text.x = element_text(angle = 50, 
+                                     hjust = 1),
+          strip.background = element_rect(fill="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          axis.ticks.x = element_blank(),
+          panel.spacing = unit(0.4, "lines"),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          axis.title.x = element_text(face = "bold", vjust = -1),
+          axis.title.y = element_text(face = "bold", vjust = 3),
+          legend.title = element_text(face = "bold", size = 11),
+          legend.text = element_text(size = 11),
+          plot.margin = margin(10, 40, 10, 10))
+}
+
+accuracyPerClass <- function(cluster_res, 
+                             categories){
+  
+  set.seed(123)
+  
+  # Shuffle the true labels
+  shuffled_accuracies <- map_dfr(1:11, function(i) {
+    shuffled_true <- sample(cluster_res$feature_type)
+    shuffled_data <- tibble(feature_type = shuffled_true, label = cluster_res$cluster_label)
+    
+    shuffled_data |>
+      mutate(match = as.character(feature_type) == as.character(label)) |>
+      group_by(feature_type) |>
+      summarise(accuracy = sum(match)/length(match)) |>
+      mutate(run = i)
+  })
+  
+  # Median background accuracy per class
+  background_accuracy <- shuffled_accuracies |>
+    group_by(feature_type) |>
+    summarise(bg_accuracy = median(accuracy))
+  
+  # Compute accuracy per class
+  accuracy_by_class <- cluster_res |>
+    mutate(match = as.character(feature_type) == as.character(cluster_label)) |>
+    group_by(feature_type) |>
+    summarise(accuracy = sum(match)/length(match)) |>
+    left_join(background_accuracy,
+              by = "feature_type") |>
+    left_join(categories,
+              by = "feature_type")
+  
+  # Plot the results
+  ggplot(accuracy_by_class, 
+         mapping = aes(x = feature_type,
+                       y = accuracy)) +
+    geom_bar(aes(y = accuracy), 
+             stat = "identity", 
+             color = "#1f618d",
+             fill = "white",
+             alpha = 1,
+             size = 1) +
+    geom_bar(aes(y = accuracy), 
+             stat = "identity", 
+             color = "#1f618d",
+             fill = "#1f618d",
+             alpha = 0.6) +
+    geom_bar(aes(y = bg_accuracy), 
+             stat = "identity", 
+             color = "#1f618d",
+             fill = "#990000",
+             alpha = 1) +
+    geom_text(aes(label = round(accuracy, 2)),
+              color = "#1f618d",
+              fontface = "bold",
+              position = position_dodge(width = 0.8),
+              vjust = -0.4,
+              size = 3,
+              show.legend = FALSE) +
+    labs(x = "Annotation Type",
+         y = "Accuracy") + 
+    facet_grid(cols = vars(category),
+               scales = "free_x",
+               space = "free_x") +
+    scale_y_continuous(limits = c(0, 1), 
+                       expand = expansion(mult = c(0, 0), 
+                                          add = c(0, 0.05))) +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 50, 
+                                     hjust = 1),
+          strip.background = element_rect(fill="#cccccc", 
+                                          color = "#cccccc"),
+          strip.text=element_text(color="black", 
+                                  face = "bold",
+                                  size = 11),
+          axis.ticks.x = element_blank(),
+          panel.spacing = unit(0.4, "lines"),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          axis.title.x = element_text(face = "bold", vjust = -1),
+          axis.title.y = element_text(face = "bold", vjust = 3),
+          legend.title = element_text(face = "bold", size = 11),
+          legend.text = element_text(size = 11),
+          legend.position = "top",
+          plot.margin = margin(10, 10, 10, 10))
+  
+}
+
+adjusted_rand_index <- function(labels_true, 
+                                labels_pred) {
   tab <- table(labels_true, labels_pred)
   n <- sum(tab)
   
@@ -94,7 +227,8 @@ adjusted_rand_index <- function(labels_true, labels_pred) {
   return(ari)
 }
 
-normalized_mutual_information <- function(labels_true, labels_pred) {
+normalized_mutual_information <- function(labels_true, 
+                                          labels_pred) {
   tab <- table(labels_true, labels_pred)
   joint_prob <- tab / sum(tab)
   
