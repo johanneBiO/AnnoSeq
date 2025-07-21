@@ -18,3 +18,4 @@
 /xgboost/results/
 /xgboost/slurm_logs/
 /clustering/slurm_logs/
+/clustering/results/
