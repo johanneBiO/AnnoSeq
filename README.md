@@ -4,7 +4,9 @@ Master Thesis by Johanne Badsberg Overgaard
 
 ## Project Overview
 
-This repository contains the code and analyses for my master's thesis project focused on using Protein Language Models for protein sequence annotation. The goal was to explore how raw attention scores from the ESM-2 model can be used to extract biologically relevant regions and annotate them by clustering of corresponding region embeddings. 
+This repository contains the code and analyses for my master's thesis project focused on using Protein Language Models for protein sequence annotation. The goal was to explore how raw attention scores from the ESM-2 model can be used to extract biologically relevant regions and annotate them by clustering of corresponding region embeddings. The figure below summarizes the overall approach.
+
+![method](method.png)
 
 The project has been supervised by Associate Professor Kristoffer Vitting-Seerup, Group leader of The Isoform Analysis Group at the Section of Bioinformatics, Health Technology, Technical University of Denmark (DTU). Chiao-Yu Hsieh, PhD student in The Isoform Analysis Group, served as the project's co-supervisor.
 
