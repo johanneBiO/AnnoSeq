@@ -8,7 +8,7 @@ This repository contains the code and analyses for my master's thesis project fo
 
 ![method](method.png)
 
-<img src="method.png" alt="Alt text" width="400"/>
+<img src="method.png" alt="Alt text" width="650"/>
 
 The project has been supervised by Associate Professor Kristoffer Vitting-Seerup, Group leader of The Isoform Analysis Group at the Section of Bioinformatics, Health Technology, Technical University of Denmark (DTU). Chiao-Yu Hsieh, PhD student in The Isoform Analysis Group, served as the project's co-supervisor.
 
