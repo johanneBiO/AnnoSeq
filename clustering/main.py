@@ -1,5 +1,5 @@
 ##########################################################################################
-# This script 
+# This script generates region embeddings from annotation file or predicted regions.
 ##########################################################################################
 
 import gc
