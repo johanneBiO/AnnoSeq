@@ -235,10 +235,10 @@ all_attn  |>
         strip.text=element_text(color="black", 
                                 face = "bold",
                                 size = 11),
-        plot.margin = margin(20, 20, 20, 20), # t, r, b, l 
+        plot.margin = margin(10, 10, 10, 70), # t, r, b, l 
         panel.spacing = unit(0.4, "lines"),
         panel.border = element_rect(color = "black", fill = NA, size = 0.8),
-        panel.background = element_rect(fill = "white", color = NA))
+        panel.background = element_rect(fill = "white", color = NA)) 
 
 ggsave(filename = file.path(res_path, "dist_bio_attn_layers_head_mean_col_mean.png"), width = 9, height = 3, dpi = 300)
 ```
@@ -270,6 +270,32 @@ all_attn  |>
         panel.border = element_rect(color = "black", fill = NA, size = 0.8)) 
 
 ggsave(filename = file.path(res_path, "dist_bio_attn_pos.png"), width = 6, height = 4, dpi = 300)
+```
+
+I show the results across all layers.
+
+```{r}
+all_attn  |>
+  filter(head_type == "mean",
+          col_type == "mean") |>
+  group_by(accession) |>
+  mutate(length = max(position),
+         pos_percent = position/length) |>
+  ggplot(mapping = aes(x = pos_percent,
+                       y = bio_attn)) +
+  geom_bin2d(bins = 100) + 
+  labs(x = "Relative Position (Position / Seq. Length)",
+       y = "Attention Score",
+       fill = "Count") + 
+  scale_fill_gradient(high = "#1f618d", low = "#e0e7ef") + 
+  scale_x_continuous(limits = c(0, 1), 
+                     expand = c(0, 0),
+                     labels = function(x) round(x, 2)) + 
+  main_theme + 
+  theme(plot.margin = margin(20, 20, 20, 20),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8)) 
+
+ggsave(filename = file.path(res_path, "dist_bio_attn_pos_all.png"), width = 6, height = 4, dpi = 300)
 ```
 
 ## Visualize examples
@@ -447,7 +473,7 @@ anno |>
 
 ## Attention Across Layers and Annotation Types
 
-We want to look at the attention for each feature type across the different layers. I load the annotations also denoted as features. In general, the attention signal is highly noisy. Thus, we must apply smoothing to be able to make sense of it. To summarize the attention, I average the attention weights for each position within a given feature type across layers.
+We want to look at the attention for each feature type across the different layers. 
 
 ```{r}
 plotCapPos <- function(attn, threshold){
@@ -456,6 +482,8 @@ plotCapPos <- function(attn, threshold){
            category = factor(category),
            feature_type = str_c(str_to_upper(str_sub(feature_type, 1, 1)),
                                 str_to_lower(str_sub(feature_type, 2))),
+           feature_type = case_when(feature_type == "Dna-binding region" ~ "DNA-binding region",
+                                   .default = feature_type),
            category = str_c(str_to_upper(str_sub(category, 1, 1)),
                             str_to_lower(str_sub(category, 2))),
            category = case_when(category == "Amino acid modification" ~ "AAM",
@@ -540,7 +568,7 @@ plotCapPos <- function(attn, threshold){
 ```{r}
 for (i in c("mean", "quan90")){
   for (j in c("mean", "quan90")){
-    for (k in c(1)){
+    for (k in c(1,2,3)){
       plot <- all_attn_rep  |>
         filter(head_type == i,
                col_type == j) |>

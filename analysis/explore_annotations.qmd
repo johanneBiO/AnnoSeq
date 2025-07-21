@@ -300,6 +300,3 @@ plot_reg / plot_pos
   
 ggsave(filename = file.path(res_path, "freq_anno.png"), width = 9, height = 9, dpi = 300)
 ```
-
-
-
