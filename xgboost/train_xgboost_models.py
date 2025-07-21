@@ -91,7 +91,14 @@ def train_model_for_class(target_class, X_train, y_train, X_test, y_test, param_
     
     X_test_subset = X_test[test_mask]
     y_test_subset = y_test[test_mask]
-    
+
+    ## Optional ##
+    #pos_train = (y_train["feature_type"] == target_class).sum()
+    #neg_train = (y_train["feature_type"] == control_class).sum()
+    #pos_test = (y_test["feature_type"] == target_class).sum()
+    #neg_test = (y_test["feature_type"] == control_class).sum()
+    ##############
+
     # Apply class imbalance handling
     X_train_final, y_train_final, undersampling_applied = handle_class_imbalance(X_train_subset, y_train_subset, target_class, control_class)
 
@@ -105,6 +112,13 @@ def train_model_for_class(target_class, X_train, y_train, X_test, y_test, param_
     pos = (y_train_binary["feature_type"] == 1).sum()
     neg = (y_train_binary["feature_type"] == 0).sum()
     pos_weight = neg / pos
+
+    ## Optional ##
+    #print(target_class)
+    #print(f"Train (Pos/Neg): {pos_train} / {neg_train}") 
+    #print(f"Balanced train (Pos/Neg) {pos} / {neg}")
+    #print(f"Test (Pos/Neg): {pos_test} / {neg_test}") 
+    ##############
 
     cv_with_groups = GroupKFold(n_splits=3)
 

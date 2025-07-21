@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from joblib import load  # assuming you use joblib to save/load models
+from joblib import load
 
 def load_xgb_models(model_folder):
     models = {}
@@ -28,7 +28,6 @@ def save_feature_importance(models, output_folder):
         importance_df.to_csv(csv_path, index=False)
         print(f'Saved feature importance for {model_name} to {csv_path}')
 
-# Example usage:
 model_folder = "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/xgboost/results/xgboost_headQuan90_colQuan_01000_100iter/models/"
 output_folder = "/net/mimer/mnt/tank/projects2/kvs_students/2025/jbo_unbiased_seq_annot/master_thesis/xgboost/results/xgboost_headQuan90_colQuan_01000_100iter/feature_importance/"
 
