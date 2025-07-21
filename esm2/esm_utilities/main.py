@@ -1,6 +1,6 @@
 ##########################################################################################
 # This script runs a modified version of ESM-2 to extract attention scores. 
-# Attention scores are aggregated based based on columns.
+# Attention scores are aggregated based on columns.
 # Optionally, the model can be run on pre-generated scrambled sequences, which should be 
 # stored in a shared folder.
 ##########################################################################################
