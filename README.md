@@ -1,4 +1,4 @@
-# Universal Protein Sequence Annotation using Protein Language Models
+# Universal Protein Sequence Annotation Using Protein Language Models
 
 Master Thesis by Johanne Badsberg Overgaard
 
@@ -18,4 +18,4 @@ The project has been supervised by Associate Professor Kristoffer Vitting-Seerup
 
 This repository contains a modified version of the code for the ESM-2 model, developed by the Meta Fundamental AI Research Protein Team (FAIR) and available at [https://github.com/facebookresearch/esm](https://github.com/facebookresearch/esm). The ESM-2 code is located in the `esm2/esm` folder and is licensed under the MIT License. See the `esm2/esm/LICENSE` file for details. The modifications are limited to saving the raw attention scores. The attention scores are automatically aggregated over attention heads. These changes cannot be disabled at this moment. All other aspects of the original code remain unchanged.
 
-The implementation of the model was inspired from the repositories [esm2_uilities from mnielLab](https://github.com/mnielLab/esm2_utilities) and [esm-utils from chihs-dtu](https://github.com/chihs-dtu/esm-utils). Additionally, code shared by Isabella Østerlund from the Department of Health Technology, DTU contributed to optimization of the code for running ESM-2 on larger datasets.
+The implementation of the model was inspired by the repositories [esm2_utilities from mnielLab](https://github.com/mnielLab/esm2_utilities) and [esm-utils from chihs-dtu](https://github.com/chihs-dtu/esm-utils). Additionally, code shared by Isabella Østerlund from the Department of Health Technology, DTU contributed to the optimization of the code for running ESM-2 on larger datasets.

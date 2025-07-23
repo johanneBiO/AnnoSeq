@@ -1,9 +1,16 @@
 rm(list = ls())
 
 library(here)
+library(tidyr)
 library(dplyr)
+library(readr)
+library(purrr)
 library(rhdf5)
+library(caret)
 library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(VennDiagram)
 
 source("analysis/utils/theme.R")
 source("analysis/utils/clust.R")
@@ -26,6 +33,23 @@ seurat_comb <- readRDS(file = here("data/subset_01000/esm_processed/region_embed
 seq_length <- read_csv(file = file.path(here("data/complete/additional/seq_length_sp_cropped.csv"))) |>
   filter(Accession %in% acc$accession)
 colnames(seq_length) <- c("accession", "length")
+
+# Define a category tibble
+categories <- anno_true |>
+  group_by(category, feature_type) |>
+  count() |>
+  select(category, feature_type) |>
+  mutate(feature_type = str_c(str_to_upper(str_sub(feature_type, 1, 1)),
+                              str_to_lower(str_sub(feature_type, 2))),
+         feature_type = case_when(feature_type == "Dna-binding region" ~ "DNA-binding region",
+                                  .default = feature_type),
+         category = str_c(str_to_upper(str_sub(category, 1, 1)),
+                          str_to_lower(str_sub(category, 2))),
+         category = case_when(category == "Amino acid modification" ~ "AAM",
+                              category == "Molecule processing" ~ "MP",
+                              .default = category),
+         feature_type = factor(feature_type),
+         category = factor(category))
 
 ################################################################################
 # PREDICTION ACCURACY
@@ -56,7 +80,7 @@ seq_length_unanno <- seq_length |>
   mutate(feature_type = "Unannotated") |>
   select(-length)
 
-# Expand the annotations
+# Expand the true annotations
 anno_true_expanded <- anno_true |>
   mutate(feature_type = str_c(str_to_upper(str_sub(feature_type, 1, 1)),
                               str_to_lower(str_sub(feature_type, 2))),
@@ -64,11 +88,13 @@ anno_true_expanded <- anno_true |>
   unnest(position) |>
   select(accession, position, feature_type)
 
+# Add the remaining unannotated positions
 anno_true_expanded <- bind_rows(anno_true_expanded,
                                 anti_join(seq_length_unanno, anno_true_expanded, 
                                           by = c("accession", "position"))) |>
   distinct()
 
+# Expand the predictions
 anno_pred_expanded_full <- anno_pred |>
   mutate(position = map2(start_position, end_position, ~ seq(.x, .y))) |>
   unnest(position) |>
@@ -86,6 +112,7 @@ anno_pred_expanded <- bind_rows(anno_pred_expanded,
 correct <- intersect(anno_pred_expanded, anno_true_expanded)
 
 # The number of correctly labled positions (annotated and unannotated) is
+dim(correct)[1]/dim(anno_pred_expanded)[1]
 dim(correct)[1]/dim(anno_true_expanded)[1]
 
 # Let's find the percentage of annotated positions, that are being detected and correctly annotated
@@ -93,11 +120,16 @@ TP <- correct |>
   filter(feature_type != "Unannotated") |>
   nrow()
 
-annotated_pos <- anno_true_expanded |>
+annotated_pred_pos <- anno_pred_expanded |>
   filter(feature_type != "Unannotated") |>
   nrow()
 
-TP/annotated_pos
+annotated_true_pos <- anno_true_expanded |>
+  filter(feature_type != "Unannotated") |>
+  nrow()
+
+TP/annotated_pred_pos
+TP/annotated_true_pos
 
 # Let's evaluate the results only when considering the well-performing models.
 good_models <- c("Disulfide bond", "Glycosylation site", "Transmembrane region", "Signal peptide",
@@ -109,13 +141,140 @@ anno_pred_expanded_good_models <- anno_pred_expanded_full |>
   select(-model) |>
   distinct()
 
-anno_true_expanded_good_models <- anno_true_expanded |>
-  filter(feature_type %in% good_models)
+correct_good_models <- intersect(anno_pred_expanded_good_models, anno_true_expanded)
 
-correct_good_models <- intersect(anno_pred_expanded_good_models, anno_true_expanded_good_models)
+# The number of correctly labbeled positions (annotated and unannotated) is
+dim(correct_good_models)[1]/dim(anno_pred_expanded_good_models)[1]
 
-# The number of correctly labled positions (annotated and unannotated) is
-dim(correct_good_models)[1]/dim(anno_true_expanded_good_models)[1]
+################################################################################
+# VENN DIAGRAM
+
+# Lets make a Venn diagram of the two sets of annotated positions
+pred_set <- anno_pred_expanded |>
+  filter(feature_type != "Unannotated") |>
+  mutate(acc_pos = paste(accession, position, sep = "_"),
+         acc_pos_anno = paste(accession, position, feature_type, sep = "_")) |>
+  distinct()
+
+true_set <- anno_true_expanded |>
+  filter(feature_type != "Unannotated") |>
+  mutate(acc_pos = paste(accession, position, sep = "_"),
+         acc_pos_anno = paste(accession, position, feature_type, sep = "_")) |>
+  distinct()
+
+# We first compute the number of distinct positions
+length(unique(pred_set$acc_pos))
+length(unique(true_set$acc_pos))
+
+# Lets look at how many are in fact annotated among the predicted positions
+n_pos_annotated <- intersect(unique(pred_set$acc_pos), unique(true_set$acc_pos))
+
+length(n_pos_annotated)/length(unique(pred_set$acc_pos))
+
+# We make the Venn diagram
+venn.diagram(
+  x = list(pred_set$acc_pos_anno, true_set$acc_pos_anno),
+  category.names = c("Predicted Positions", "True Positions"),
+  filename = paste(res_path, "venn.png", sep = ""),
+  output=TRUE,
+  imagetype="png" ,
+  height = 3000 , 
+  width = 3000 , 
+  resolution = 300,
+  compression = "lzw",
+  lwd = c(4, 4),
+  color = c("#990000", "#1f618d"),
+  fill = c("#990000", "#1f618d"),
+  alpha = c(0.5, 0.5),
+  cex = 2,
+  fontface = "bold",
+  cat.cex = c(2, 2),
+  cat.fontface = c("bold", "bold"))
+
+################################################################################
+# INVESTIGATION OF THE SETS
+
+# Find unique and union sets
+only_pred <- anti_join(pred_set, true_set)
+only_true <- anti_join(true_set, pred_set)
+inter <- intersect(pred_set, true_set)
+
+# Add source column
+only_pred$source <- "only_pred"
+only_true$source <- "only_true"
+inter$source <- "inter"
+
+# Combine
+set_data <- bind_rows(only_pred, only_true, inter)
+
+# Calculate proportions
+proportions <- set_data |>
+  group_by(source, feature_type) |>
+  summarise(count = n(), 
+            .groups = "drop") |>
+  group_by(source) |>
+  mutate(proportion = count / sum(count),
+         feature_type = case_when(feature_type == "Dna-binding region" ~ "DNA-binding region",
+                                  .default = feature_type),
+         feature_type = factor(feature_type,
+                               levels = levels(categories$feature_type)),
+         source = factor(source, 
+                         levels = c("only_true", "inter", "only_pred")))
+
+# Plot
+ggplot(proportions, 
+       aes(x = proportion, 
+           y = source, 
+           fill = feature_type,
+           color = feature_type)) +
+  labs(title = "",
+       fill = "") +
+  scale_fill_manual(values = palette_19) + 
+  scale_color_manual(values = palette_19) + 
+  geom_bar(stat = "identity", 
+           position = "fill",
+           width = 0.6,
+           alpha = 0.5) +
+  labs(title = "Class Proportions in Union and Unique Sets",
+       y = "Proportion", x = "") +
+  theme_void() +
+  theme(plot.margin = margin(50, 50, 50, 50)) + 
+  guides(color = "none",  # Hide color legend if same as fill
+         fill = guide_legend(override.aes = list(alpha = 1))) 
+  
+ggsave(filename = file.path(res_path, "position_sets_anno_type_proportions.png"), width = 8, height = 4, dpi = 300) 
+
+################################################################################
+# POSITION-WISE ACCURACY ON TRUE REGIONS
+
+# Get labels for true regions
+anno_true_cluster_label <- seurat_comb@meta.data |>
+  filter(source == "true") |>
+  select(accession, feature_type, label, start_position, end_position) |>
+  mutate(model = str_remove(feature_type, "model_"),
+         model = str_replace_all(model, "_", " "),
+         model = str_c(str_to_upper(str_sub(model, 1, 1)),
+                       str_to_lower(str_sub(model, 2))),
+         feature_type = label) |>
+  select(accession, feature_type, model, start_position, end_position)
+
+# Expand
+anno_true_cluster_label <- anno_true_cluster_label |>
+  mutate(position = map2(start_position, end_position, ~ seq(.x, .y))) |>
+  unnest(position) |>
+  select(accession, position, feature_type) |>
+  distinct() |>
+  mutate(acc_pos = paste(accession, position, sep = "_"),
+         acc_pos_anno = paste(accession, position, feature_type, sep = "_"))
+
+# We first compute the number of distinct positions
+length(unique(anno_true_cluster_label$acc_pos))
+length(unique(true_set$acc_pos))
+
+# Lets look at how many are in fact annotated among the predicted positions
+correct_true <- intersect(unique(anno_true_cluster_label$acc_pos_anno), unique(true_set$acc_pos_anno))
+
+length(correct_true)/length(unique(anno_true_cluster_label$acc_pos_anno))
 
 ################################################################################
 # REGION LENGTH DISTRIBUTION
@@ -130,6 +289,53 @@ anno_pred <- anno_pred |>
 
 print(paste("Average region length (true):", mean(anno_true$region_length)))
 print(paste("Average region length (pred):", mean(anno_pred$region_length)))
+
+
+################################################################################
+# PROPORTION ANNOTATED POSITIONS IN SEQUENCE
+
+# Proportion annotated in Q8TDD2
+anno_true_expanded |>
+  filter(accession == "Q8TDD2") |>
+  mutate(feature_type = case_when(feature_type != "Unannotated" ~ "Annotated",
+                                  .default = feature_type)) |>
+  distinct() |>
+  group_by(feature_type) |>
+  count()
+
+# General
+proportion_anno <- anno_true_expanded |>
+  mutate(feature_type = case_when(feature_type != "Unannotated" ~ "Annotated",
+                                  .default = feature_type)) |>
+  distinct() |>
+  group_by(accession) |>
+  summarise(total_positions = n(),
+            anno = sum(feature_type == "Annotated"),
+            unanno = sum(feature_type == "Unannotated"),
+            proportion = anno / total_positions,
+            .groups = "drop") 
+
+proportion_anno |>
+  ggplot(mapping = aes(x = proportion)) +
+  geom_density(color = "#1f618d",
+               fill = "#e0e7ef",
+               size = 1) + 
+  labs(x = "Proportion Annotated Positions",
+       y = "Density") +
+  main_theme + 
+  scale_x_continuous(limits = c(0, 1), 
+                     expand = c(0, 0),
+                     labels = function(x) round(x, 2)) + 
+  scale_y_continuous(limits = c(0, 1.5),
+                     expand = c(0, 0)) + 
+  main_theme + 
+  theme(plot.margin = margin(20, 20, 20, 20),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.8)) 
+
+ggsave(filename = file.path(res_path, "dist_prop_anno.png"), width = 6, height = 4, dpi = 300)
+
+cumulative_unanno <- cumsum(sort(proportion_anno$unanno, decreasing = TRUE))
+which(cumulative_unanno >= sum(proportion_anno$unanno) / 2)[1]
 
 ################################################################################
 # PROPORTION OF ANNOTATED POSITIONS IN THE PREDICTIONS
@@ -183,75 +389,3 @@ proportions <- anno_pred |>
             .groups = "drop") |>
   select(region_id, proportion_annotated) |>
   as.data.frame()
-
-rownames(proportions) <- proportions$region_id
-
-seurat_comb <- RunUMAP(seurat_comb, reduction = "pca", dims = 1:40, return.model = TRUE)
-
-subset(seurat_comb, source == "true") |>
-  DimPlot(reduction = "umap", 
-        cols = palette_19,
-        alpha = 0.5,
-        pt.size = 1) +
-  labs(x = "UMAP 1", y = "UMAP 2", fill = "Annotation Type") + 
-  main_theme +
-  theme(plot.title = element_blank())
-
-seurat_subset <- subset(seurat_comb, source == "pred")
-
-seurat_subset <- AddMetaData(seurat_subset, metadata = proportions)
-
-seurat_subset |>
-  DimPlot(reduction = "umap", 
-          group.by = "RNA_snn_res.8",
-          label = TRUE,
-          #cols = palette_19,
-          alpha = 0.5,
-          pt.size = 1) +
-  labs(x = "UMAP 1", y = "UMAP 2", fill = "Annotation Type") + 
-  main_theme +
-  theme(plot.title = element_blank())
-
-# Get UMAP coordinates and metadata
-umap_data <- Embeddings(seurat_subset, "umap") %>%
-  as.data.frame() %>%
-  tibble::rownames_to_column("cell_id")
-
-# Add metadata (make sure it includes `proportion_annotated`)
-umap_data$proportion_annotated <- seurat_subset@meta.data$proportion_annotated
-
-# Plot with continuous gradient
-ggplot(umap_data, aes(x = umap_1, y = umap_2, color = proportion_annotated)) +
-  geom_point(alpha = 0.5, size = 1) +
-  scale_color_gradient(low = "red", high = "lightgray", name = "Proportion Annotated") +
-  labs(x = "UMAP 1", y = "UMAP 2") +
-  main_theme +
-  theme(plot.title = element_blank())
-
-sum(proportions$proportion_annotated == 1)/length(proportions$proportion_annotated)
-
-meta <- seurat_comb@meta.data |>
-  mutate(length = end_position-start_position+1)
-
-meta |>
-  filter(length < 250) |>
-  ggplot(mapping = aes(x = length,
-                       colour = source)) +
-  geom_density()
-
-
-
-quantile(meta$length[meta$source == "pred"])
-quantile(meta$length[meta$source == "true"])
-
-meta_region <- seurat_comb@meta.data |>
-  filter(description == "Disordered")
-   
-
-
-test <- meta_region |>
-  group_by(RNA_snn_res.8, label) |>
-  count() |>
-  filter(n > 20)
-
-
